@@ -18,9 +18,6 @@ edition = "2018"
 # panic = "abort"
 
 [dependencies]
-# A BIOS boot loader implmented by rust and inline assembly
-bootloader = "0.9.8"
-
 # This crate provides a Volatile wrapper type with read and write methods.
 # These methods guarantee that the reads/writes are not optimized away.
 volatile = "0.2.6"

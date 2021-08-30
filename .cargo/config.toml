@@ -1,9 +1,12 @@
-[unstable]
-build-std-features = ["compiler-builtins-mem"]
-build-std = ["core", "compiler_builtins", "alloc"]
+# [unstable]
+# build-std-features = ["compiler-builtins-mem"]
+# build-std = ["core", "compiler_builtins", "alloc"]
 
 [build]
-target = "x86_64-yeli_os.json"
+# target = "riscv64-yeli_os.json"
+target = "riscv64gc-unknown-none-elf"
 
-[target.'cfg(target_os = "none")']
-runner = "bootimage runner"
+[target.riscv64gc-unknown-none-elf]
+rustflags = [
+    "-Clink-arg=-Tsrc/platform/qemu/linker.ld", "-Cforce-frame-pointers=yes"
+]
