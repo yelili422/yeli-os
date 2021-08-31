@@ -16,12 +16,17 @@
 // use asm! instead
 #![feature(llvm_asm)]
 
+#![feature(panic_info_message)]
+
+use crate::syscall::sbi::shutdown;
+
+global_asm!(include_str!("boot/entry.asm"));
+
 
 mod lang_items;
-mod init;
 mod syscall;
+mod interrupt;
 mod console;
-// mod vga_buffer;
 
 
 pub fn test_runner(tests: &[&dyn Fn()]) {
@@ -31,4 +36,28 @@ pub fn test_runner(tests: &[&dyn Fn()]) {
         // exit_qemu(QemuExitCode::Failed);
     }
     // exit_qemu(QemuExitCode::Success);
+}
+
+
+fn clear_bss() {
+    extern "C" {
+        fn sbss();
+        fn ebss();
+    }
+    (sbss as usize..ebss as usize).for_each(|a| {
+        unsafe { (a as *mut u8).write_volatile(0) }
+    });
+}
+
+#[no_mangle]
+pub fn rust_main() -> ! {
+    clear_bss();
+    interrupt::init();
+
+    println!("Hello, world!");
+    unsafe {
+        llvm_asm!("ebreak"::::"volatile");
+    };
+
+    shutdown()
 }
