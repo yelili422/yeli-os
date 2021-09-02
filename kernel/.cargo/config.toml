@@ -10,3 +10,6 @@ target = "riscv64gc-unknown-none-elf"
 rustflags = [
     "-Clink-arg=-Tsrc/platform/qemu/linker.ld", "-Cforce-frame-pointers=yes"
 ]
+
+[target.'cfg(target_os = "none")']
+runner = "cargo bootloader"

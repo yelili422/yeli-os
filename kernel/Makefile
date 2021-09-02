@@ -36,7 +36,7 @@ qemu:
 	qemu-system-riscv64 \
 		-machine virt \
 		-nographic \
-		-bios bootloader/opensbi-0.6-rv64-qemu.bin \
+		-bios ../bootloader/opensbi-0.6-rv64-qemu.bin \
 		-device loader,file=$(bin),addr=0x80200000 \
 
 run: build qemu
