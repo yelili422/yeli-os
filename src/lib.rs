@@ -18,6 +18,9 @@
 
 #![feature(panic_info_message)]
 
+
+use log::info;
+
 use crate::syscall::sbi::shutdown;
 
 global_asm!(include_str!("boot/entry.asm"));
@@ -27,6 +30,7 @@ mod lang_items;
 mod syscall;
 mod interrupt;
 mod console;
+mod logger;
 
 
 pub fn test_runner(tests: &[&dyn Fn()]) {
@@ -54,10 +58,9 @@ pub fn rust_main() -> ! {
     clear_bss();
     interrupt::init();
 
-    println!("Hello, world!");
-    unsafe {
-        llvm_asm!("ebreak"::::"volatile");
-    };
+    logger::init().expect("the logger init failed.");
+
+    info!("Welcome to YeLi-OS ~");
 
     shutdown()
 }
