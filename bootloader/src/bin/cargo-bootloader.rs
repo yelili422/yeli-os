@@ -1,21 +1,35 @@
+use anyhow::{anyhow, Result};
+use std::{env, fs, path::Path, process::Command};
 
-use std::process::Command;
+pub fn main() -> Result<()> {
+    // println!("{:?}", env::args());
 
-pub fn main() {
+    let mut args = env::args();
+
+    args.next();
+    args.next();
+
+    let image_path = args.next().clone().ok_or_else(|| anyhow!("parsing image path error"))?;
+    let base_dir = fs::canonicalize(Path::new(&image_path).parent().unwrap())?;
+    let bin_file_path = format!("{}/tmp.bin", &base_dir.to_str().unwrap());
+    let sbi_path = "/Users/tang/Projects/yeli-os/bootloader/opensbi-0.6-rv64-qemu.bin";
+
     Command::new("rust-objcopy")
-        .arg("/Users/tang/Projects/yeli-os/kernel/target/riscv64gc-unknown-none-elf/debug/yeli-os")
+        .arg(&image_path)
         .arg("--strip-all")
         .args(["-O", "binary"])
-        .arg("/Users/tang/Projects/yeli-os/kernel/target/riscv64gc-unknown-none-elf/debug/test.bin")
-
-        .spawn()
-        .unwrap();
+        .arg(&bin_file_path)
+        .spawn()?;
 
     Command::new("qemu-system-riscv64")
         .args(["-machine", "virt"])
         .arg("-nographic")
-        .args(["-bios", "/Users/tang/Projects/yeli-os/bootloader/opensbi-0.6-rv64-qemu.bin"])
-        .args(["-device", "loader,file=/Users/tang/Projects/yeli-os/kernel/target/riscv64gc-unknown-none-elf/debug/test.bin,addr=0x80200000"])
-        .spawn()
-        .unwrap();
+        .args(["-bios", sbi_path])
+        .args([
+            "-device",
+            format!("loader,file={},addr=0x80200000", bin_file_path).as_str(),
+        ])
+        .spawn()?;
+
+    Ok(())
 }
