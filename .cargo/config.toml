@@ -12,4 +12,4 @@ rustflags = [
 ]
 
 [target.'cfg(target_os = "none")']
-runner = "cargo bootloader"
+runner = "cargo runner"
