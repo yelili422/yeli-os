@@ -2,17 +2,22 @@
 
 set -e
 
+# Guarantee the target path absolute.
 target=$1
-project_dir=$CARGO_MANIFEST_DIR
+if [[ "$target" != /* ]]; then
+    target=$CARGO_MANIFEST_DIR/$target
+fi
 
 suffix=".bin"
-bin_file=$project_dir/$target$suffix
+bin_file=$target$suffix
 
-rust-objcopy $project_dir/$target \
+# Transform the output of ELF into binary format.
+rust-objcopy $target \
     --strip-all \
     -O binary \
     $bin_file
 
+# Run the binary file in qemu.
 qemu-system-riscv64 \
     -machine virt \
     -nographic \

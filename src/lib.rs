@@ -27,10 +27,10 @@ global_asm!(include_str!("boot/entry.asm"));
 
 
 mod panic;
-mod syscall;
-mod interrupt;
-mod console;
-mod logger;
+pub mod syscall;
+pub mod interrupt;
+pub mod console;
+pub mod logger;
 
 
 #[no_mangle]
@@ -53,7 +53,6 @@ pub fn test_runner(tests: &[&dyn Fn()]) {
         test();
     }
 }
-
 
 #[test_case]
 fn trivial_assertion() {

@@ -1,9 +1,4 @@
-# [unstable]
-# build-std-features = ["compiler-builtins-mem"]
-# build-std = ["core", "compiler_builtins", "alloc"]
-
 [build]
-# target = "riscv64-yeli_os.json"
 target = "riscv64gc-unknown-none-elf"
 
 [target.riscv64gc-unknown-none-elf]
