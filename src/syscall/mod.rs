@@ -1,5 +1,6 @@
-pub mod sbi;
+mod sbi;
 
+pub use sbi::{console_getchar, console_putchar, set_timer, shutdown};
 
 fn syscall(id: usize, args: [usize; 3]) -> isize {
     let mut ret: isize;
@@ -19,6 +20,5 @@ fn syscall(id: usize, args: [usize; 3]) -> isize {
 const SYSCALL_WRITE: usize = 64;
 
 pub fn sys_write(fd: usize, buffer: &[u8]) -> isize {
-  syscall(SYSCALL_WRITE, [fd, buffer.as_ptr() as usize, buffer.len()])
+    syscall(SYSCALL_WRITE, [fd, buffer.as_ptr() as usize, buffer.len()])
 }
-

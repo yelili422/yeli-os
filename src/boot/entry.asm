@@ -1,8 +1,8 @@
     .section .text.entry
-    .globl _start
-_start:
+    .globl _entry
+_entry:
     la sp, boot_stack_top
-    call rust_main
+    call _start
 
     .section .bss.stack
     .global bootstack

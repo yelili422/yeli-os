@@ -21,6 +21,5 @@ impl log::Log for Logger {
 static LOGGER: Logger = Logger;
 
 pub fn init() -> Result<(), SetLoggerError> {
-    log::set_logger(&LOGGER)
-        .map(|()| log::set_max_level(LevelFilter::Info))
+    log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info))
 }

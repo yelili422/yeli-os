@@ -1,9 +1,6 @@
-
 use core::fmt::{self, Write};
 
-use crate::syscall::sbi::console_putchar;
-
-
+use crate::syscall::console_putchar;
 
 struct Stdout;
 
@@ -25,10 +22,6 @@ impl Write for Stdout {
 }
 
 /// 打印由 [`core::format_args!`] 格式化后的数据
-/// 
-/// [`print!`] 和 [`println!`] 宏都将展开成此函数
-/// 
-/// [`core::format_args!`]: https://doc.rust-lang.org/nightly/core/macro.format_args.html
 pub fn _print(args: fmt::Arguments) {
     Stdout.write_fmt(args).unwrap();
 }

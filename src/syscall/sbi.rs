@@ -1,6 +1,5 @@
 #![allow(unused)]
 
-
 const SBI_SET_TIMER: usize = 0;
 const SBI_CONSOLE_PUTCHAR: usize = 1;
 const SBI_CONSOLE_GETCHAR: usize = 2;
@@ -39,4 +38,4 @@ pub fn shutdown() -> ! {
 
 pub fn set_timer(time: usize) {
     sbi_call(SBI_SET_TIMER, time, 0, 0);
-} 
+}

@@ -1,4 +1,4 @@
-use crate::syscall::sbi::set_timer;
+use crate::syscall::set_timer;
 use log::debug;
 use riscv::register::{sie, sstatus, time};
 
@@ -6,9 +6,8 @@ pub static mut TICKS: usize = 0;
 
 static INTERVAL: usize = 100000;
 
-
 pub fn init() {
-    unsafe  {
+    unsafe {
         // enable timer interrupt
         sie::set_stimer();
         sstatus::set_sie();

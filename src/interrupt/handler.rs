@@ -1,8 +1,10 @@
 use log::info;
-use riscv::register::{scause::{Exception, Interrupt, Scause, Trap}, stvec};
+use riscv::register::{
+    scause::{Exception, Interrupt, Scause, Trap},
+    stvec,
+};
 
 use super::{context::Context, timer};
-
 
 global_asm!(include_str!("./interrupt.s"));
 
@@ -20,7 +22,7 @@ pub fn handle_interrupt(context: &mut Context, scause: Scause, stval: usize) {
     match scause.cause() {
         Trap::Exception(Exception::Breakpoint) => breakpoint(context),
         Trap::Interrupt(Interrupt::SupervisorTimer) => supervisor_timer(context),
-        _ => fault(context, scause, stval)
+        _ => fault(context, scause, stval),
     }
 }
 
@@ -42,4 +44,3 @@ fn fault(context: &mut Context, scause: Scause, stval: usize) {
         stval
     );
 }
-

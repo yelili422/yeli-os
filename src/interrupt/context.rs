@@ -1,6 +1,4 @@
-
 use riscv::register::sstatus::Sstatus;
-
 
 #[repr(C)]
 #[derive(Debug)]
