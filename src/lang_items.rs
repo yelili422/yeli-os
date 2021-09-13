@@ -2,7 +2,6 @@ use crate::{print, println, syscall::shutdown};
 use core::panic::PanicInfo;
 use log::error;
 
-
 pub trait Testable {
     fn run(&self) -> ();
 }
@@ -18,15 +17,12 @@ where
     }
 }
 
-
 pub fn test_runner(tests: &[&dyn Testable]) {
     println!("[test] Running {} test(s)...", tests.len());
     for test in tests {
         test.run();
     }
-
 }
-
 
 #[cfg(not(test))]
 #[panic_handler]
@@ -50,5 +46,3 @@ fn panic(info: &PanicInfo) -> ! {
     error!("[failed] {}\n", &info);
     shutdown()
 }
-
-

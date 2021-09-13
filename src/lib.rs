@@ -12,6 +12,9 @@
 // use asm! instead
 #![feature(llvm_asm)]
 #![feature(panic_info_message)]
+#![feature(alloc_error_handler)]
+
+extern crate alloc;
 
 use log::info;
 
@@ -19,8 +22,9 @@ global_asm!(include_str!("boot/entry.asm"));
 
 pub mod console;
 pub mod interrupt;
-pub mod logger;
 mod lang_items;
+pub mod logger;
+pub mod mm;
 pub mod syscall;
 
 pub use lang_items::test_runner;
@@ -30,6 +34,7 @@ pub fn init() {
     info!("Initializing the system...");
 
     interrupt::init();
+    mm::init();
 }
 
 #[cfg(test)]
@@ -41,7 +46,6 @@ pub extern "C" fn _start() -> ! {
     test_main();
     shutdown()
 }
-
 
 #[test_case]
 fn test_assertion() {
