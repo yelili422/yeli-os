@@ -7,10 +7,7 @@
 // the #[no_main] attribute and provide our own entry point.
 #![reexport_test_harness_main = "test_main"]
 #![feature(global_asm)]
-// FIXME:
-// use of deprecated macro `llvm_asm`: will be removed from the compiler,
-// use asm! instead
-#![feature(llvm_asm)]
+#![feature(asm)]
 #![feature(panic_info_message)]
 #![feature(alloc_error_handler)]
 
