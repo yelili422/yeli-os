@@ -15,12 +15,12 @@ fn sbi_call(which: usize, arg0: usize, arg1: usize, arg2: usize) -> usize {
     let ret;
     unsafe {
         asm!("ecall",
-           inlateout("x10") arg0 => ret,
-           in("x11") arg1,
-           in("x12") arg2,
-           in("x17") which,
-           options(nostack)
-       )
+            inlateout("x10") arg0 => ret,
+            in("x11") arg1,
+            in("x12") arg2,
+            in("x17") which,
+            options(nostack)
+        )
     }
     ret
 }
@@ -38,6 +38,6 @@ pub fn shutdown() -> ! {
     unreachable!()
 }
 
-pub fn set_timer(time: usize) {
-    sbi_call(SBI_SET_TIMER, time, 0, 0);
+pub fn set_timer(timer: usize) {
+    sbi_call(SBI_SET_TIMER, timer, 0, 0);
 }

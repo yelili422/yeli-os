@@ -11,20 +11,23 @@
 #![feature(panic_info_message)]
 #![feature(alloc_error_handler)]
 
+#[macro_use]
+extern crate bitflags;
 extern crate alloc;
-
-use log::info;
 
 global_asm!(include_str!("boot/entry.asm"));
 
-pub mod console;
+pub mod config;
 pub mod interrupt;
 mod lang_items;
-pub mod logger;
 pub mod mm;
+pub mod process;
 pub mod syscall;
+pub mod utils;
 
 pub use lang_items::test_runner;
+use log::info;
+use utils::logger;
 
 pub fn init() {
     logger::init().expect("the logger init failed.");
