@@ -43,6 +43,6 @@ fn panic(info: &PanicInfo) -> ! {
 #[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("[failed] {}\n", &info);
+    error!("\n[failed] {}\n", &info);
     shutdown()
 }

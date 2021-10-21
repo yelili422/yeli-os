@@ -17,10 +17,9 @@ extern crate alloc;
 
 global_asm!(include_str!("boot/entry.asm"));
 
-pub mod config;
 pub mod interrupt;
 mod lang_items;
-pub mod mm;
+pub mod memory;
 pub mod process;
 pub mod syscall;
 pub mod utils;
@@ -30,11 +29,11 @@ use log::info;
 use utils::logger;
 
 pub fn init() {
-    logger::init().expect("the logger init failed.");
+    logger::init().expect("The logger init failed.");
     info!("Initializing the system...");
 
+    memory::init();
     interrupt::init();
-    mm::init();
 }
 
 #[cfg(test)]

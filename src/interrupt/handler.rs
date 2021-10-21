@@ -32,7 +32,7 @@ fn breakpoint(context: &mut Context) {
     context.sepc += 2;
 }
 
-fn supervisor_timer(context: &mut Context) {
+fn supervisor_timer(_context: &mut Context) {
     timer::tick();
 }
 
