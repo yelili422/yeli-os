@@ -149,9 +149,35 @@ impl PageTable {
 
 #[cfg(test)]
 mod tests {
-    use crate::memory::{address::VirtualPageNum, frame::frame_alloc};
+    use alloc::vec::Vec;
+
+    use crate::memory::{address::VirtualPageNum, frame::{FrameTracker, frame_alloc}};
 
     use super::{PageTable, Flags};
+
+    #[test_case]
+    fn test_write_to_page() {
+        let frame = frame_alloc().unwrap();
+        let bytes = frame.ppn.get_bytes_array();
+        for (i, item) in bytes.iter_mut().enumerate() {
+            *item = (i % 255) as u8;
+        }
+        for (i, item) in bytes.iter().enumerate() {
+            assert_eq!(*item, (i % 255) as u8);
+        }
+    }
+
+    #[test_case]
+    fn test_alloc_pages() {
+        let mut v: Vec<FrameTracker> = Vec::new();
+        for _ in 0..400 {
+            let f = frame_alloc().unwrap();
+            for iter in f.ppn.get_bytes_array().iter_mut() {
+                *iter = 0;
+            }
+            v.push(f);
+        }
+    }
 
     #[test_case]
     fn test_find_page_by_vpn() {

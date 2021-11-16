@@ -119,7 +119,7 @@ pub fn frame_alloc() -> Option<FrameTracker> {
         .map(|ppn| FrameTracker::new(ppn))
 }
 
-pub fn frame_free(ppn: PhysicalPageNum) {
+fn frame_free(ppn: PhysicalPageNum) {
     FRAME_ALLOCATOR.lock().free(ppn);
 }
 

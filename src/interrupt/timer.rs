@@ -1,5 +1,5 @@
 use crate::syscall::set_timer;
-use log::debug;
+use log::trace;
 use riscv::register::{sie, sstatus, time};
 
 pub static mut TICKS: usize = 0;
@@ -24,7 +24,7 @@ pub fn tick() {
     unsafe {
         TICKS += 1;
         if TICKS % 100 == 0 {
-            debug!("{} tick", TICKS);
+            trace!("{} tick", TICKS);
         }
     }
 }

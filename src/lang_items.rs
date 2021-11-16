@@ -11,17 +11,18 @@ where
     T: Fn(),
 {
     fn run(&self) {
-        print!("{}...\t", core::any::type_name::<T>());
+        print!("[test] {}...\t", core::any::type_name::<T>());
         self();
         println!("[ok]");
     }
 }
 
 pub fn test_runner(tests: &[&dyn Testable]) {
-    println!("[test] Running {} test(s)...", tests.len());
+    println!("\n[test] Running {} test(s)...", tests.len());
     for test in tests {
         test.run();
     }
+    println!("[test] Test finished.");
 }
 
 #[cfg(not(test))]

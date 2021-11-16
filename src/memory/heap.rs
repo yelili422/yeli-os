@@ -23,7 +23,7 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
 #[cfg(test)]
 mod tests {
     #[test_case]
-    fn heap_allocate_test() {
+    fn test_heap_allocate() {
         use alloc::boxed::Box;
         use alloc::vec::Vec;
 
