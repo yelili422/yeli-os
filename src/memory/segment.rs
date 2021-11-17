@@ -78,7 +78,7 @@ impl Segment {
         for vpn in self.range {
             let ppn: PhysicalPageNum;
             match self.map_type {
-                MapType::Identical => ppn = PhysicalPageNum(vpn.0),
+                MapType::Identical => ppn = PhysicalPageNum::from(vpn.value()),
                 MapType::Framed => {
                     let frame = frame_allocate().unwrap();
                     ppn = frame.ppn();

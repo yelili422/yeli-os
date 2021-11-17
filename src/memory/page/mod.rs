@@ -11,19 +11,19 @@ pub const PAGE_SIZE: usize = 4096; // 4K
 
 #[repr(C)]
 #[derive(Copy, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct VirtualAddress(pub usize);
+pub struct VirtualAddress(usize);
 
 #[repr(C)]
 #[derive(Copy, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct PhysicalAddress(pub usize);
+pub struct PhysicalAddress(usize);
 
 #[repr(C)]
 #[derive(Copy, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct VirtualPageNum(pub usize);
+pub struct VirtualPageNum(usize);
 
 #[repr(C)]
 #[derive(Copy, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct PhysicalPageNum(pub usize);
+pub struct PhysicalPageNum(usize);
 
 macro_rules! bitarray_type_impl {
     ($($t:ty)*) => ($(
@@ -40,6 +40,11 @@ macro_rules! bitarray_type_impl {
         impl From<usize> for $t {
             fn from(v: usize) -> Self {
                 Self(v)
+            }
+        }
+        impl $t {
+            pub fn value(&self) -> usize{
+                self.0
             }
         }
     )*)
