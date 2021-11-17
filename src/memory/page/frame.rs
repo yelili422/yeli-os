@@ -15,7 +15,7 @@ impl Frame {
         Self { ppn }
     }
 
-    pub fn new(ppn: PhysicalPageNum) -> Self {
+    pub fn create(ppn: PhysicalPageNum) -> Self {
         // page cleaning
         let bytes_array = ppn.get_bytes_array();
         for i in bytes_array {
@@ -33,7 +33,7 @@ impl Frame {
 impl Drop for Frame {
     fn drop(&mut self) {
         trace!("drop: {:?}", &self);
-        frame_deallocate(self.ppn);
+        frame_deallocate(self);
     }
 }
 

@@ -1,5 +1,5 @@
 use super::FrameAllocator;
-use crate::memory::page::PhysicalPageNum;
+use crate::memory::page::{Frame, PhysicalPageNum};
 use alloc::vec::Vec;
 use log::{info, trace};
 
@@ -35,21 +35,21 @@ impl StackFrameAllocator {
 }
 
 impl FrameAllocator for StackFrameAllocator {
-    fn allocate(&mut self) -> Option<PhysicalPageNum> {
+    fn allocate(&mut self) -> Option<Frame> {
         if let Some(ppn) = self.recycled.pop() {
-            Some(ppn.into())
+            Some(Frame::create(PhysicalPageNum::from(ppn)))
         } else {
             if self.current == self.end {
                 None
             } else {
                 self.current += 1;
-                Some((self.current - 1).into())
+                Some(Frame::create(PhysicalPageNum::from(self.current - 1)))
             }
         }
     }
 
-    fn free(&mut self, ppn: PhysicalPageNum) {
-        let ppn = ppn.0;
+    fn free(&mut self, frame: &Frame) {
+        let ppn: usize = frame.ppn().into();
         trace!("frame free:{} {}", &self.current, &ppn);
         if ppn >= self.current || self.recycled.iter().find(|&v| *v == ppn).is_some() {
             panic!("Frame ppn={:#x} has not been allocated.", ppn);

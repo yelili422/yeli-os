@@ -149,16 +149,12 @@ impl PageTable {
 mod tests {
     use alloc::vec::Vec;
 
-    use crate::memory::page::{
-        frame::{frame_allocate, Frame},
-        table::{Flags, PageTable},
-        VirtualPageNum,
-    };
+    use crate::memory::{allocator::frame_allocate, page::{Frame, VirtualPageNum, table::{Flags, PageTable}}};
 
     #[test_case]
     fn test_write_to_page() {
         let frame = frame_allocate().unwrap();
-        let bytes = frame.ppn.get_bytes_array();
+        let bytes = frame.ppn().get_bytes_array();
         for (i, item) in bytes.iter_mut().enumerate() {
             *item = (i % 255) as u8;
         }
@@ -172,7 +168,7 @@ mod tests {
         let mut v: Vec<Frame> = Vec::new();
         for _ in 0..400 {
             let f = frame_allocate().unwrap();
-            for iter in f.ppn.get_bytes_array().iter_mut() {
+            for iter in f.ppn().get_bytes_array().iter_mut() {
                 *iter = 0;
             }
             v.push(f);
@@ -184,7 +180,7 @@ mod tests {
         let frame = frame_allocate().unwrap();
         let mut pt = PageTable::new();
         let vpn = VirtualPageNum::from(0x0_0000);
-        pt.map(vpn, frame.ppn, Flags::READABLE);
+        pt.map(vpn, frame.ppn(), Flags::READABLE);
         assert!(pt.find(vpn).is_some());
         assert!(!pt.find(VirtualPageNum::from(0x0_0001)).is_some())
     }
