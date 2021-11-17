@@ -1,8 +1,13 @@
-use super::config::PAGE_SIZE;
-use super::page::PageTableEntry;
-use crate::utils::range::StepByOne;
+mod frame;
+mod table;
 
+pub use {self::frame::*, self::table::*};
+
+use crate::memory::page::table::PageTableEntry;
+use crate::utils::range::StepByOne;
 use bit_field::BitField;
+
+pub const PAGE_SIZE: usize = 4096; // 4K
 
 #[repr(C)]
 #[derive(Copy, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]

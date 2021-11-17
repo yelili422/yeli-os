@@ -1,7 +1,5 @@
-use super::{
-    address::{VirtualPageNum, PhysicalPageNum},
-    frame::{frame_alloc, FrameTracker},
-};
+use super::{frame::Frame, PhysicalPageNum, VirtualPageNum};
+use crate::memory::allocator::frame_allocate;
 use alloc::vec;
 use alloc::vec::Vec;
 use bit_field::BitField;
@@ -79,21 +77,21 @@ impl Debug for PageTableEntry {
 
 pub struct PageTable {
     root: PhysicalPageNum,
-    frames: Vec<FrameTracker>,
+    frames: Vec<Frame>,
 }
 
 impl PageTable {
     pub fn new() -> Self {
-        let frame = frame_alloc().unwrap();
+        let frame = frame_allocate().unwrap();
         Self {
-            root: frame.ppn,
+            root: frame.ppn(),
             frames: vec![frame],
         }
     }
 
     /// Find the page table entry corresponding the virtual page number.
     /// If not found, attempt to create new page table entry.
-    /// 
+    ///
     /// Returns the mutable pointer of the target page table entry
     /// for subsequent operations of read and write.
     pub fn find_or_create(&mut self, vpn: VirtualPageNum) -> Option<&mut PageTableEntry> {
@@ -104,8 +102,8 @@ impl PageTable {
             let entries = p.get_page_directory();
             let target_item = &mut entries[levels[i]];
             if !target_item.is_valid() && i < 2 {
-                let frame = frame_alloc().unwrap();
-                *target_item = PageTableEntry::new(frame.ppn, Flags::VALID);
+                let frame = frame_allocate().unwrap();
+                *target_item = PageTableEntry::new(frame.ppn(), Flags::VALID);
                 self.frames.push(frame);
             }
             p = target_item.physical_page_num();
@@ -151,13 +149,15 @@ impl PageTable {
 mod tests {
     use alloc::vec::Vec;
 
-    use crate::memory::{address::VirtualPageNum, frame::{FrameTracker, frame_alloc}};
-
-    use super::{PageTable, Flags};
+    use crate::memory::page::{
+        frame::{frame_allocate, Frame},
+        table::{Flags, PageTable},
+        VirtualPageNum,
+    };
 
     #[test_case]
     fn test_write_to_page() {
-        let frame = frame_alloc().unwrap();
+        let frame = frame_allocate().unwrap();
         let bytes = frame.ppn.get_bytes_array();
         for (i, item) in bytes.iter_mut().enumerate() {
             *item = (i % 255) as u8;
@@ -169,9 +169,9 @@ mod tests {
 
     #[test_case]
     fn test_alloc_pages() {
-        let mut v: Vec<FrameTracker> = Vec::new();
+        let mut v: Vec<Frame> = Vec::new();
         for _ in 0..400 {
-            let f = frame_alloc().unwrap();
+            let f = frame_allocate().unwrap();
             for iter in f.ppn.get_bytes_array().iter_mut() {
                 *iter = 0;
             }
@@ -181,7 +181,7 @@ mod tests {
 
     #[test_case]
     fn test_find_page_by_vpn() {
-        let frame = frame_alloc().unwrap();
+        let frame = frame_allocate().unwrap();
         let mut pt = PageTable::new();
         let vpn = VirtualPageNum::from(0x0_0000);
         pt.map(vpn, frame.ppn, Flags::READABLE);

@@ -1,10 +1,9 @@
 use super::{
-    address::{PhysicalPageNum, VirtualAddress, VirtualPageNum},
-    frame::{frame_alloc, FrameTracker},
-    page::{Flags, PageTable},
+    allocator::frame_allocate,
+    page::{Flags, Frame, PageTable, PhysicalPageNum, VirtualAddress, VirtualPageNum},
 };
 use crate::{
-    memory::config::{MEMORY_END, PAGE_SIZE},
+    memory::{page::PAGE_SIZE, MEMORY_END},
     utils::range::ObjectRange,
 };
 use alloc::{collections::BTreeMap, sync::Arc, vec, vec::Vec};
@@ -45,7 +44,7 @@ pub struct Segment {
     map_type: MapType,
     range: ObjectRange<VirtualPageNum>,
     /// Binding the frames' life cycle to the logic segment.
-    frames: BTreeMap<VirtualPageNum, FrameTracker>,
+    frames: BTreeMap<VirtualPageNum, Frame>,
     permissions: Permissions,
 }
 
@@ -81,8 +80,8 @@ impl Segment {
             match self.map_type {
                 MapType::Identical => ppn = PhysicalPageNum(vpn.0),
                 MapType::Framed => {
-                    let frame = frame_alloc().unwrap();
-                    ppn = frame.ppn;
+                    let frame = frame_allocate().unwrap();
+                    ppn = frame.ppn();
                     self.frames.insert(vpn, frame);
                 }
             }

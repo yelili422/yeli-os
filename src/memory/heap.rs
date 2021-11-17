@@ -1,6 +1,6 @@
 use linked_list_allocator::LockedHeap;
 
-use super::config::KERNEL_HEAP_SIZE;
+pub const KERNEL_HEAP_SIZE: usize = 0x20_0000; // 2M
 
 static mut HEAP_SPACE: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
 
