@@ -6,8 +6,6 @@
 // calls test_runner, but this function is ignored because we use
 // the #[no_main] attribute and provide our own entry point.
 #![reexport_test_harness_main = "test_main"]
-#![feature(global_asm)]
-#![feature(asm)]
 #![feature(panic_info_message)]
 #![feature(alloc_error_handler)]
 
@@ -23,6 +21,8 @@ pub mod memory;
 pub mod process;
 pub mod syscall;
 pub mod utils;
+
+use core::arch::global_asm;
 
 pub use lang_items::test_runner;
 use log::info;

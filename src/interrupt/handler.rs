@@ -1,3 +1,5 @@
+use core::arch::global_asm;
+
 use log::info;
 use riscv::register::{
     scause::{Exception, Interrupt, Scause, Trap},

@@ -7,7 +7,7 @@ use crate::{
     utils::range::ObjectRange,
 };
 use alloc::{collections::BTreeMap, sync::Arc, vec, vec::Vec};
-use core::fmt::Debug;
+use core::{fmt::Debug, arch::asm};
 use lazy_static::lazy_static;
 use log::debug;
 use riscv::register::satp;

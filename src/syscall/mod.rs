@@ -1,5 +1,7 @@
 mod sbi;
 
+use core::arch::asm;
+
 pub use sbi::{console_getchar, console_putchar, set_timer, shutdown};
 
 fn syscall(id: usize, args: [usize; 3]) -> isize {
