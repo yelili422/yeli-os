@@ -3,7 +3,7 @@ mod table;
 
 pub use {self::frame::*, self::table::*};
 
-use crate::memory::page::table::PageTableEntry;
+use crate::mem::page::table::PageTableEntry;
 use crate::utils::range::StepByOne;
 use bit_field::BitField;
 

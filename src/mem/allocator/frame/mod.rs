@@ -1,7 +1,7 @@
 mod stack;
 
 use self::stack::StackFrameAllocator;
-use crate::memory::{MEMORY_END, page::{Frame, PhysicalAddress}};
+use crate::mem::{MEMORY_END, page::{Frame, PhysicalAddress}};
 use lazy_static::lazy_static;
 use spin::Mutex;
 

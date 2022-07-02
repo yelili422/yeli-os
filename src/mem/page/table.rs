@@ -1,5 +1,5 @@
 use super::{frame::Frame, PhysicalPageNum, VirtualPageNum};
-use crate::memory::allocator::frame_allocate;
+use crate::mem::allocator::frame_allocate;
 use alloc::vec;
 use alloc::vec::Vec;
 use bit_field::BitField;
@@ -149,7 +149,7 @@ impl PageTable {
 mod tests {
     use alloc::vec::Vec;
 
-    use crate::memory::{allocator::frame_allocate, page::{Frame, VirtualPageNum, table::{Flags, PageTable}}};
+    use crate::mem::{allocator::frame_allocate, page::{Frame, VirtualPageNum, table::{Flags, PageTable}}};
 
     #[test_case]
     fn test_write_to_page() {

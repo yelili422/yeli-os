@@ -1,5 +1,5 @@
 use super::PhysicalPageNum;
-use crate::memory::allocator::frame_deallocate;
+use crate::mem::allocator::frame_deallocate;
 use log::trace;
 
 /// [`Frame`] can be interpreted as [`Box`](alloc::boxed::Box).
@@ -39,7 +39,7 @@ impl Drop for Frame {
 
 #[cfg(test)]
 mod tests {
-    use crate::memory::allocator::frame_allocate;
+    use crate::mem::allocator::frame_allocate;
 
     #[test_case]
     fn test_success() {

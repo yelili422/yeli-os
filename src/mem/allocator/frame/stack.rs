@@ -1,5 +1,5 @@
 use super::FrameAllocator;
-use crate::memory::page::{Frame, PhysicalPageNum};
+use crate::mem::page::{Frame, PhysicalPageNum};
 use alloc::vec::Vec;
 use log::{info, trace};
 

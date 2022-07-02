@@ -17,8 +17,8 @@ global_asm!(include_str!("boot/entry.asm"));
 
 pub mod interrupt;
 mod lang_items;
-pub mod memory;
-pub mod process;
+pub mod mem;
+pub mod task;
 pub mod syscall;
 pub mod utils;
 
@@ -32,7 +32,7 @@ pub fn init() {
     logger::init().expect("The logger init failed.");
     info!("Initializing the system...");
 
-    memory::init();
+    mem::init();
     interrupt::init();
 }
 

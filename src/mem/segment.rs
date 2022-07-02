@@ -3,7 +3,7 @@ use super::{
     page::{Flags, Frame, PageTable, PhysicalPageNum, VirtualAddress, VirtualPageNum},
 };
 use crate::{
-    memory::{page::PAGE_SIZE, MEMORY_END},
+    mem::{page::PAGE_SIZE, MEMORY_END},
     utils::range::ObjectRange,
 };
 use alloc::{collections::BTreeMap, sync::Arc, vec, vec::Vec};
