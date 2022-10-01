@@ -2,7 +2,7 @@ use linked_list_allocator::LockedHeap;
 
 pub const KERNEL_HEAP_SIZE: usize = 0x20_0000; // 2M
 
-// Allocate a large block of memory as heap space.
+// Allocate a large block of memory as heap space in .bss segment.
 static mut HEAP_SPACE: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
 
 #[global_allocator]
@@ -21,11 +21,10 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{boxed::Box, vec::Vec};
+
     #[test_case]
     fn test_heap_allocate() {
-        use alloc::boxed::Box;
-        use alloc::vec::Vec;
-
         let v = Box::new(5);
         assert_eq!(*v, 5);
         core::mem::drop(v);
@@ -38,5 +37,28 @@ mod tests {
         for (i, value) in v.into_iter().enumerate() {
             assert_eq!(value, i);
         }
+    }
+
+    #[test_case]
+    fn test_heap_contains() {
+        extern "C" {
+            fn __bss_start();
+            fn __bss_end();
+        }
+        let bss_range = __bss_start as usize .. __bss_end as usize;
+        let a = Box::new(1);
+        assert_eq!(*a, 1);
+        assert!(bss_range.contains(&(a.as_ref() as *const _ as usize)));
+        drop(a);
+
+        let mut v: Vec<usize> = Vec::new();
+        for i in 0..500 {
+            v.push(i);
+        }
+        for i in 0..500 {
+            assert_eq!(v[i], i);
+        }
+        assert!(bss_range.contains(&(v.as_ptr() as usize)));
+        drop(v);
     }
 }
