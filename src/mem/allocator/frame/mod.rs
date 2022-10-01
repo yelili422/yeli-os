@@ -17,10 +17,12 @@ lazy_static! {
 
 pub fn init() {
     extern "C" {
-        fn kernel_end();
+        fn __kernel_start();
+        fn __kernel_end();
     }
+
     FRAME_ALLOCATOR.lock().init(
-        PhysicalAddress::from(kernel_end as usize).ceil_page(),
+        PhysicalAddress::from(__kernel_end as usize).ceil_page(),
         PhysicalAddress::from(MEMORY_END).floor_page(),
     );
 }

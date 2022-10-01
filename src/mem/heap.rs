@@ -2,17 +2,16 @@ use linked_list_allocator::LockedHeap;
 
 pub const KERNEL_HEAP_SIZE: usize = 0x20_0000; // 2M
 
+// Allocate a large block of memory as heap space.
 static mut HEAP_SPACE: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
 
 #[global_allocator]
 static HEAP_ALLOCATOR: LockedHeap = LockedHeap::empty();
 
-pub fn init() {
-    unsafe {
-        HEAP_ALLOCATOR
-            .lock()
-            .init(HEAP_SPACE.as_ptr() as usize, KERNEL_HEAP_SIZE);
-    }
+pub unsafe fn init() {
+    HEAP_ALLOCATOR
+        .lock()
+        .init(HEAP_SPACE.as_ptr() as usize, KERNEL_HEAP_SIZE);
 }
 
 #[alloc_error_handler]

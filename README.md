@@ -14,12 +14,7 @@ YeLi-OS
     rustup component add rust-src llvm-tools-preview
     ```
 
-3. Install `cargo-runner`
+3. Run
     ```shell
-    cargo install cargo-runner
-    ```
-
-4. Run
-    ```shell
-    cargo run
+    make run
     ```

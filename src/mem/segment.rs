@@ -3,7 +3,19 @@ use super::{
     page::{Flags, Frame, PageTable, PhysicalPageNum, VirtualAddress, VirtualPageNum},
 };
 use crate::{
-    mem::{page::PAGE_SIZE, MEMORY_END},
+    mem::{
+        page::PAGE_SIZE,
+        MEMORY_END,
+        __text_start,
+        __text_end,
+        __rodata_start,
+        __rodata_end,
+        __data_start,
+        __data_end,
+        __bss_start,
+        __bss_end,
+        __kernel_end,
+    },
     utils::range::ObjectRange,
 };
 use alloc::{collections::BTreeMap, sync::Arc, vec, vec::Vec};
@@ -143,41 +155,34 @@ impl SegmentTable {
 
     pub fn new_kernel() -> Self {
         debug!("Init the kernel's segments...");
-        extern "C" {
-            fn text_start();
-            fn rodata_start();
-            fn data_start();
-            fn bss_start();
-            fn kernel_end();
-        }
         let mut res = Self::new_bare();
         let segments = vec![
             Segment::new(
-                (text_start as usize).into(),
-                (rodata_start as usize).into(),
+                (__text_start as usize).into(),
+                (__text_end as usize).into(),
                 MapType::Identical,
                 Permissions::READABLE | Permissions::EXECUTABLE,
             ),
             Segment::new(
-                (rodata_start as usize).into(),
-                (data_start as usize).into(),
+                (__rodata_start as usize).into(),
+                (__rodata_end as usize).into(),
                 MapType::Identical,
                 Permissions::READABLE,
             ),
             Segment::new(
-                (data_start as usize).into(),
-                (bss_start as usize).into(),
+                (__data_start as usize).into(),
+                (__data_end as usize).into(),
                 MapType::Identical,
                 Permissions::READABLE | Permissions::WRITABLE,
             ),
             Segment::new(
-                (bss_start as usize).into(),
-                (kernel_end as usize).into(),
+                (__bss_start as usize).into(),
+                (__bss_end as usize).into(),
                 MapType::Identical,
                 Permissions::READABLE | Permissions::WRITABLE,
             ),
             Segment::new(
-                (kernel_end as usize).into(),
+                (__kernel_end as usize).into(),
                 (MEMORY_END as usize).into(),
                 MapType::Identical,
                 Permissions::READABLE | Permissions::WRITABLE,

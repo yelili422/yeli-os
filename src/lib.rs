@@ -13,8 +13,6 @@
 extern crate bitflags;
 extern crate alloc;
 
-global_asm!(include_str!("boot/entry.asm"));
-
 pub mod interrupt;
 mod lang_items;
 pub mod mem;
@@ -28,11 +26,14 @@ pub use lang_items::test_runner;
 use log::info;
 use utils::logger;
 
+// The entry point for this OS
+global_asm!(include_str!("boot/entry.asm"));
+
 pub fn init() {
     logger::init().expect("The logger init failed.");
     info!("Initializing the system...");
 
-    mem::init();
+    unsafe {mem::init();}
     interrupt::init();
 }
 

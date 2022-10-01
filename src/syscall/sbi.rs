@@ -1,3 +1,7 @@
+//! RISC-V Supervisor Binary Interface(SBI)
+//! It allows the supervisor to execute some privileged operations
+//! by using the `ecall` instruction.
+
 #![allow(unused)]
 
 use core::arch::asm;
