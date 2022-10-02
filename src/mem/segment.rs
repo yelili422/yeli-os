@@ -1,37 +1,33 @@
 use super::{
-    allocator::frame_allocate,
+    alloc::frame_allocate,
     page::{Flags, Frame, PageTable, PhysicalPageNum, VirtualAddress, VirtualPageNum},
 };
 use crate::{
-    mem::{
-        page::PAGE_SIZE,
-        MEMORY_END,
-        __text_start,
-        __text_end,
-        __rodata_start,
-        __rodata_end,
-        __data_start,
-        __data_end,
-        __bss_start,
-        __bss_end,
-        __kernel_end,
-    },
+    mem::{page::PAGE_SIZE},
     utils::range::ObjectRange,
 };
-use alloc::{collections::BTreeMap, sync::Arc, vec, vec::Vec};
-use core::{fmt::Debug, arch::asm};
+use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
+use core::{arch::asm, fmt::Debug};
 use lazy_static::lazy_static;
 use log::debug;
 use riscv::register::satp;
 use spin::Mutex;
 
-pub fn init() {
-    KERNEL_SPACE.lock().activate();
+pub fn init(kernel_segments: Vec<Segment>) {
+    let mut seg = SEG_KERNEL_SPACE.lock();
+
+    debug!("Init the kernel's segments...");
+    for segment in kernel_segments {
+        debug!("Mapping: {:?}", &segment);
+        seg.push(segment, None);
+    }
+
+    seg.activate();
 }
 
 lazy_static! {
-    pub static ref KERNEL_SPACE: Arc<Mutex<SegmentTable>> =
-        Arc::new(Mutex::new(SegmentTable::new_kernel()));
+    pub static ref SEG_KERNEL_SPACE: Arc<Mutex<SegmentTable>> =
+        Arc::new(Mutex::new(SegmentTable::empty()));
 }
 
 bitflags! {
@@ -92,9 +88,8 @@ impl Segment {
             match self.map_type {
                 MapType::Identical => ppn = PhysicalPageNum::from(vpn.value()),
                 MapType::Framed => {
-                    let frame = frame_allocate().unwrap();
-                    ppn = frame.ppn();
-                    self.frames.insert(vpn, frame);
+                    ppn = frame_allocate().unwrap();
+                    self.frames.insert(vpn, Frame::new(ppn));
                 }
             }
             let flags = Flags::from_bits(self.permissions.bits).unwrap();
@@ -138,7 +133,7 @@ pub struct SegmentTable {
 }
 
 impl SegmentTable {
-    pub fn new_bare() -> Self {
+    pub fn empty() -> Self {
         Self {
             page_table: PageTable::new(),
             segments: Vec::new(),
@@ -153,54 +148,12 @@ impl SegmentTable {
         self.segments.push(segment);
     }
 
-    pub fn new_kernel() -> Self {
-        debug!("Init the kernel's segments...");
-        let mut res = Self::new_bare();
-        let segments = vec![
-            Segment::new(
-                (__text_start as usize).into(),
-                (__text_end as usize).into(),
-                MapType::Identical,
-                Permissions::READABLE | Permissions::EXECUTABLE,
-            ),
-            Segment::new(
-                (__rodata_start as usize).into(),
-                (__rodata_end as usize).into(),
-                MapType::Identical,
-                Permissions::READABLE,
-            ),
-            Segment::new(
-                (__data_start as usize).into(),
-                (__data_end as usize).into(),
-                MapType::Identical,
-                Permissions::READABLE | Permissions::WRITABLE,
-            ),
-            Segment::new(
-                (__bss_start as usize).into(),
-                (__bss_end as usize).into(),
-                MapType::Identical,
-                Permissions::READABLE | Permissions::WRITABLE,
-            ),
-            Segment::new(
-                (__kernel_end as usize).into(),
-                (MEMORY_END as usize).into(),
-                MapType::Identical,
-                Permissions::READABLE | Permissions::WRITABLE,
-            ),
-        ];
-        for segment in segments {
-            debug!("Mapping: {:?}", &segment);
-            res.push(segment, None);
-        }
-        res
-    }
-
     pub fn activate(&self) {
-        debug!("Activate the segment table...");
+        debug!("Activate the segment table and the page table...");
         let token = self.page_table.token();
         unsafe {
             satp::write(token);
-            asm!("sfence.vma");
+            asm!("sfence.vma"); // clear tlb
         }
     }
 }

@@ -1,5 +1,5 @@
 use super::FrameAllocator;
-use crate::mem::page::{Frame, PhysicalPageNum};
+use crate::mem::page::PhysicalPageNum;
 use alloc::vec::Vec;
 use log::{info, trace};
 
@@ -21,7 +21,7 @@ impl StackFrameAllocator {
 
     pub fn init(&mut self, start: PhysicalPageNum, end: PhysicalPageNum) {
         info!(
-            "Init the frame allocator from {:?} to {:?}...",
+            "Init the frame allocator from ppn {:?} to {:?}...",
             &start, &end
         );
         self.current = start.into();
@@ -35,21 +35,21 @@ impl StackFrameAllocator {
 }
 
 impl FrameAllocator for StackFrameAllocator {
-    fn allocate(&mut self) -> Option<Frame> {
+    fn allocate(&mut self) -> Option<PhysicalPageNum> {
         if let Some(ppn) = self.recycled.pop() {
-            Some(Frame::create(PhysicalPageNum::from(ppn)))
+            Some(PhysicalPageNum::from(ppn))
         } else {
             if self.current == self.end {
                 None
             } else {
                 self.current += 1;
-                Some(Frame::create(PhysicalPageNum::from(self.current - 1)))
+                Some(PhysicalPageNum::from(self.current - 1))
             }
         }
     }
 
-    fn free(&mut self, frame: &Frame) {
-        let ppn: usize = frame.ppn().into();
+    fn free(&mut self, ppn: &PhysicalPageNum) {
+        let ppn: usize = ppn.value();
         trace!("frame free:{} {}", &self.current, &ppn);
         if ppn >= self.current || self.recycled.iter().find(|&v| *v == ppn).is_some() {
             panic!("Frame ppn={:#x} has not been allocated.", ppn);

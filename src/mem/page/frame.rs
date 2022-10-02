@@ -1,10 +1,13 @@
 use super::PhysicalPageNum;
-use crate::mem::allocator::frame_deallocate;
+use crate::mem::alloc::frame_deallocate;
 use log::trace;
 
 /// [`Frame`] can be interpreted as [`Box`](alloc::boxed::Box).
 /// The deference is that the space is not allocated on the heap,
 /// but in a physical page.
+///
+/// Frame provides `drop` function, and it will be called on destroy.
+/// The drop function will reset the memory spaces pointed by ppn.
 #[derive(Debug)]
 pub struct Frame {
     ppn: PhysicalPageNum,
@@ -15,14 +18,14 @@ impl Frame {
         Self { ppn }
     }
 
-    pub fn create(ppn: PhysicalPageNum) -> Self {
+    pub fn new(ppn: PhysicalPageNum) -> Self {
         // page cleaning
         let bytes_array = ppn.get_bytes_array();
         for i in bytes_array {
             *i = 0;
         }
         trace!("Init physical page number: {:?}.", &ppn);
-        Self { ppn }
+        Frame::from(ppn)
     }
 
     pub fn ppn(&self) -> PhysicalPageNum {
@@ -33,13 +36,13 @@ impl Frame {
 impl Drop for Frame {
     fn drop(&mut self) {
         trace!("drop: {:?}", &self);
-        frame_deallocate(self);
+        frame_deallocate(&self.ppn());
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::mem::allocator::frame_allocate;
+    use crate::mem::alloc::frame_allocate;
 
     #[test_case]
     fn test_success() {

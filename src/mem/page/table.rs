@@ -1,5 +1,5 @@
 use super::{frame::Frame, PhysicalPageNum, VirtualPageNum};
-use crate::mem::allocator::frame_allocate;
+use crate::mem::alloc::frame_allocate;
 use alloc::vec;
 use alloc::vec::Vec;
 use bit_field::BitField;
@@ -12,14 +12,14 @@ const PAGE_NUM_RANGE: core::ops::Range<usize> = 10..54;
 bitflags! {
     #[derive(Default)]
     pub struct Flags: usize {
-        const VALID = 1 << 0;
-        const READABLE = 1 << 1;
-        const WRITABLE = 1 << 2;
-        const EXECUTABLE = 1 << 3;
-        const USER = 1 << 4;
-        const GLOBAL = 1 << 5;
-        const ACCESSED = 1 << 6;
-        const DIRTY = 1 << 7;
+        const VALID         = 1 << 0;
+        const READABLE      = 1 << 1;
+        const WRITABLE      = 1 << 2;
+        const EXECUTABLE    = 1 << 3;
+        const USER          = 1 << 4;
+        const GLOBAL        = 1 << 5;
+        const ACCESSED      = 1 << 6;
+        const DIRTY         = 1 << 7;
     }
 }
 
@@ -37,7 +37,7 @@ impl PageTableEntry {
     }
 
     pub fn empty() -> Self {
-        Self(0)
+        Self(0) // it's a invalid page table entry
     }
 
     pub fn physical_page_num(&self) -> PhysicalPageNum {
@@ -82,10 +82,10 @@ pub struct PageTable {
 
 impl PageTable {
     pub fn new() -> Self {
-        let frame = frame_allocate().unwrap();
+        let ppn = frame_allocate().unwrap();
         Self {
-            root: frame.ppn(),
-            frames: vec![frame],
+            root: ppn,
+            frames: vec![Frame::new(ppn)],
         }
     }
 
@@ -102,9 +102,9 @@ impl PageTable {
             let entries = p.get_page_directory();
             let target_item = &mut entries[levels[i]];
             if !target_item.is_valid() && i < 2 {
-                let frame = frame_allocate().unwrap();
-                *target_item = PageTableEntry::new(frame.ppn(), Flags::VALID);
-                self.frames.push(frame);
+                let ppn = frame_allocate().unwrap();
+                *target_item = PageTableEntry::new(ppn, Flags::VALID);
+                self.frames.push(Frame::new(ppn));
             }
             p = target_item.physical_page_num();
             res = Some(target_item);
@@ -149,12 +149,12 @@ impl PageTable {
 mod tests {
     use alloc::vec::Vec;
 
-    use crate::mem::{allocator::frame_allocate, page::{Frame, VirtualPageNum, table::{Flags, PageTable}}};
+    use crate::mem::{alloc::frame_allocate, page::{Frame, VirtualPageNum, table::{Flags, PageTable}}};
 
     #[test_case]
     fn test_write_to_page() {
-        let frame = frame_allocate().unwrap();
-        let bytes = frame.ppn().get_bytes_array();
+        let ppn = frame_allocate().unwrap();
+        let bytes = ppn.get_bytes_array();
         for (i, item) in bytes.iter_mut().enumerate() {
             *item = (i % 255) as u8;
         }
@@ -167,8 +167,8 @@ mod tests {
     fn test_alloc_pages() {
         let mut v: Vec<Frame> = Vec::new();
         for _ in 0..400 {
-            let f = frame_allocate().unwrap();
-            for iter in f.ppn().get_bytes_array().iter_mut() {
+            let ppn = frame_allocate().unwrap();
+            for iter in ppn.get_bytes_array().iter_mut() {
                 *iter = 0;
             }
             v.push(f);
@@ -177,10 +177,10 @@ mod tests {
 
     #[test_case]
     fn test_find_page_by_vpn() {
-        let frame = frame_allocate().unwrap();
+        let ppn = frame_allocate().unwrap();
         let mut pt = PageTable::new();
         let vpn = VirtualPageNum::from(0x0_0000);
-        pt.map(vpn, frame.ppn(), Flags::READABLE);
+        pt.map(vpn, ppn, Flags::READABLE);
         assert!(pt.find(vpn).is_some());
         assert!(!pt.find(VirtualPageNum::from(0x0_0001)).is_some())
     }

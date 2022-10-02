@@ -40,7 +40,7 @@ mod tests {
     }
 
     #[test_case]
-    fn test_heap_contains() {
+    fn test_heap_in_bss() {
         extern "C" {
             fn __bss_start();
             fn __bss_end();
