@@ -41,9 +41,11 @@ run: build
 	$(qemu) $(qemu_args)
 
 .PHONY: gdb
-gdb:
-	$(qemu) $(qemu_args) -s -S &
-	@sleep 1
+gdb: build
+	$(qemu) $(qemu_args) -s -S
+
+.PHONY: gdb_client
+gdb_client:
 	$(gdb) $(gdb_client_args)
 
 .PHONY: clean
@@ -51,5 +53,5 @@ clean:
 	@cargo clean
 
 .PHONY: test
-test:
+test: build
 	@cargo test

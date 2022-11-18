@@ -1,6 +1,5 @@
 use crate::{print, println, syscall::shutdown};
 use core::panic::PanicInfo;
-use log::error;
 
 pub trait Testable {
     fn run(&self) -> ();
@@ -29,14 +28,14 @@ pub fn test_runner(tests: &[&dyn Testable]) {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     if let Some(location) = info.location() {
-        error!(
-            "[panic] at {}:{} {}",
+        println!(
+            "\n[panic] at {}:{} {}",
             location.file(),
             location.line(),
             info.message().unwrap()
         );
     } else {
-        error!("[panic] {}", info.message().unwrap());
+        println!("[panic] {}", info.message().unwrap());
     }
     shutdown()
 }
@@ -44,6 +43,6 @@ fn panic(info: &PanicInfo) -> ! {
 #[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("\n[failed] {}\n", &info);
+    println!("[failed]\n{}\n", &info);
     shutdown()
 }

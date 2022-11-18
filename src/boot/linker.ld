@@ -1,7 +1,6 @@
 /* Ref: https://sourceware.org/binutils/docs/ld/Scripts.html */
 
-OUTPUT_ARCH(riscv)
-
+OUTPUT_ARCH("riscv")
 ENTRY(_entry)
 
 BASE_ADDRESS = 0x80200000;
@@ -17,7 +16,7 @@ SECTIONS
         *(.text.entry)
 
         . = ALIGN(4096);
-        __trampoline_start = .;
+        __trampoline = .;
         *(.text.trampoline)
 
         . = ALIGN(4096);

@@ -8,3 +8,6 @@ rustflags = [
 
 [target.'cfg(target_os = "none")']
 runner = "scripts/run.sh"
+
+[unstable]
+build-std = ["core", "compiler_builtins", "alloc"]

@@ -6,12 +6,10 @@ pub static mut TICKS: usize = 0;
 
 static INTERVAL: usize = 100000;
 
-pub fn init() {
-    unsafe {
-        // enable timer interrupt
-        sie::set_stimer();
-        sstatus::set_sie();
-    }
+pub unsafe fn init() {
+    // enable timer interrupt
+    sie::set_stimer();
+    sstatus::set_sie();
     set_next_timer();
 }
 

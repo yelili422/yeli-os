@@ -2,7 +2,7 @@ mod context;
 mod handler;
 mod timer;
 
-pub fn init() {
+pub unsafe fn init() {
     handler::init();
     timer::init();
 }

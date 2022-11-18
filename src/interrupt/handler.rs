@@ -10,13 +10,11 @@ use super::{context::Context, timer};
 
 global_asm!(include_str!("./interrupt.s"));
 
-pub fn init() {
+pub unsafe fn init() {
     extern "C" {
         fn __interrupt();
     }
-    unsafe {
-        stvec::write(__interrupt as usize, stvec::TrapMode::Direct);
-    }
+    stvec::write(__interrupt as usize, stvec::TrapMode::Direct);
 }
 
 #[no_mangle]
