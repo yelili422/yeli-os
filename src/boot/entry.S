@@ -5,7 +5,7 @@
 .globl _entry
 _entry:
     la  sp, boot_stack_top
-    call    start
+    call    _start
 spin:
     j   spin
 

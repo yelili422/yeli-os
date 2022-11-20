@@ -1,7 +1,11 @@
 #![no_std]
-#![cfg_attr(not(test), no_main)]
+#![no_main]
 #![feature(custom_test_frameworks)]
-#![test_runner(crate::test_runner)]
+#![test_runner(lang_items::test_runner)]
+// The custom test frameworks feature generates a main function that
+// calls test_runner, but this function is ignored because we use
+// the #[no_main] attribute and provide our own entry point.
+#![reexport_test_harness_main = "test_main"]
 #![feature(panic_info_message)]
 // #![feature(alloc_error_handler)]
 #![feature(step_trait)]
@@ -11,13 +15,11 @@ extern crate bitflags;
 // extern crate alloc;
 
 use core::arch::global_asm;
-
-pub use lang_items::test_runner;
 use log::{info, LevelFilter};
 
 pub mod console;
 pub mod interrupt;
-mod lang_items;
+pub mod lang_items;
 pub mod logger;
 pub mod mem;
 pub mod proc;
@@ -30,8 +32,26 @@ pub fn init() {
     logger::init(LevelFilter::Trace).unwrap();
     info!("Initializing the system...");
 
-    mem::init(&mem::MEMORY_MAP);
+    // mem::init(&mem::MEMORY_MAP);
     // proc::init();
     // interrupt::init();
 
+}
+
+#[cfg(test)]
+#[no_mangle]
+pub extern "C" fn _start() -> ! {
+    use crate::syscall::shutdown;
+
+    init();
+    test_main();
+
+    info!("It did not crash!");
+    shutdown()
+}
+
+
+#[test_case]
+fn test_assertion() {
+    assert_eq!(1, 1);
 }
