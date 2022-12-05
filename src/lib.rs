@@ -7,12 +7,10 @@
 // the #[no_main] attribute and provide our own entry point.
 #![reexport_test_harness_main = "test_main"]
 #![feature(panic_info_message)]
-// #![feature(alloc_error_handler)]
+#![feature(alloc_error_handler)]
 #![feature(step_trait)]
 
-// #[macro_use]
-extern crate bitflags;
-// extern crate alloc;
+extern crate alloc;
 
 use core::arch::global_asm;
 use log::{info, LevelFilter};
@@ -29,10 +27,10 @@ pub mod syscall;
 global_asm!(include_str!("boot/entry.S"));
 
 pub fn init() {
-    logger::init(LevelFilter::Trace).unwrap();
+    logger::init(LevelFilter::Debug).unwrap();
     info!("Initializing the system...");
 
-    // mem::init(&mem::MEMORY_MAP);
+    mem::init();
     // proc::init();
     // interrupt::init();
 

@@ -31,8 +31,8 @@ fn sbi_call(which: usize, arg0: usize, arg1: usize, arg2: usize) -> usize {
     ret
 }
 
-pub fn console_putchar(c: usize) {
-    sbi_call(SBI_CONSOLE_PUTCHAR, c, 0, 0);
+pub fn console_putchar(c: u8) {
+    sbi_call(SBI_CONSOLE_PUTCHAR, c as usize, 0, 0);
 }
 
 pub fn console_getchar() -> usize {

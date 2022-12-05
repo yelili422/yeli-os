@@ -14,6 +14,4 @@ pub extern "C" fn _start() -> ! {
 }
 
 #[test_case]
-fn test_boot() {
-
-}
+fn test_boot() {}

@@ -37,10 +37,5 @@ fn supervisor_timer(_context: &mut Context) {
 }
 
 fn fault(context: &mut Context, scause: Scause, stval: usize) {
-    panic!(
-        "Unresolved interrupt: {:?}\n{:x?}\nstval: {:x}",
-        scause.cause(),
-        context,
-        stval
-    );
+    panic!("Unresolved interrupt: {:?}\n{:x?}\nstval: {:x}", scause.cause(), context, stval);
 }

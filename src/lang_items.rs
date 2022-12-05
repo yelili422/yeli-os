@@ -31,7 +31,6 @@ pub fn test_runner(tests: &[&dyn Testable]) {
     // TODO: exit code
 }
 
-
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {

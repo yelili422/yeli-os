@@ -4,24 +4,25 @@ use crate::syscall::console_putchar;
 
 struct Stdout;
 
-impl Write for Stdout {
-    /// 打印一个字符串
-    ///
-    /// [`console_putchar`] sbi 调用每次接受一个 `usize`，但实际上会把它作为 `u8` 来
-    /// 打印字符。因此，如果字符串中存在非 ASCII 字符，需要在 utf-8 编码下，
-    /// 对于每一个 `u8` 调用一次 [`console_putchar`]
+impl fmt::Write for Stdout {
+    /// Prints a string, which can contain non-ASCII characters.
     fn write_str(&mut self, s: &str) -> fmt::Result {
         let mut buffer = [0u8; 4];
+
+        // The `console_putchar` sbi call accepts one 'u8` to print
+        // the characters actually. Therefore, if there are non-ASCII
+        // characters in the string, we need to be in utf-8 encoding
+        // call `console_putchar` once for each `u8`.
         for c in s.chars() {
             for code_point in c.encode_utf8(&mut buffer).as_bytes().iter() {
-                console_putchar(*code_point as usize);
+                console_putchar(*code_point);
             }
         }
         Ok(())
     }
 }
 
-/// 打印由 [`core::format_args!`] 格式化后的数据
+/// Prints formatted string by [`core::format_args!`].
 pub fn _print(args: fmt::Arguments) {
     Stdout.write_fmt(args).unwrap();
 }
