@@ -1,9 +1,11 @@
+use core::slice::from_raw_parts_mut;
+
 /// A 64-bit physical address is split into three fields:
 ///
 /// [56..63] - must be zero.
 /// [12..55] - the physical page number.
 /// [0..11] - 12 bits of byte offset within the page.
-pub type PhysAddr = u64;
+pub type PhysicalAddress = u64;
 
 /// The risc-v Sv39 scheme has three levels of page-table
 /// pages. A 64-bit virtual address is split into five fields:
@@ -13,7 +15,9 @@ pub type PhysAddr = u64;
 /// [21..29] - 9 bits of level-1 index.
 /// [12..20] - 9 bits of level-0 index.
 /// [ 0..11] - 12 bits of byte offset within the page.
-pub type VirtAddr = u64;
+pub type VirtualAddress = u64;
+
+pub type Address = u64;
 
 /// MAX_VA is actually one bit less than the max allowed by
 /// Sv39, to avoid having to sign-extend virtual addresses
@@ -49,26 +53,28 @@ macro_rules! is_aligned {
 
 #[macro_export]
 macro_rules! memset {
-    ($addr:expr, $val:expr, $size:expr) => {
-        use core::slice::from_raw_parts_mut;
+    ($addr:expr, $val:expr, $size:expr) => {{
         unsafe {
-            for i in from_raw_parts_mut($addr as *mut u8, $size as usize).iter_mut() {
-                *i = $val;
-            }
+            core::slice::from_raw_parts_mut($addr as *mut u8, $size as usize).fill($val);
         }
-    };
+    }};
+}
+
+/// Converts the address to type `&'static mut T`.
+pub unsafe fn as_mut<T>(addr: Address) -> &'static mut T {
+    (addr as *mut T).as_mut().expect("type cast error")
+}
+
+/// Converts the address to a array of u8.
+pub unsafe fn as_u8_slice(addr: Address, size: u64) -> &'static mut [u8] {
+    from_raw_parts_mut(addr as *mut u8, size as usize)
 }
 
 /// Extract the three 9-bit page table indices from a virtual address.
-pub fn px(level: usize, va: VirtAddr) -> usize {
+pub fn px(level: usize, va: VirtualAddress) -> usize {
     let level = level as u64;
     const PX_MUSK: u64 = 0x1FF; // 9 bits
     (va >> (PG_SHIFT + 9 * level) & PX_MUSK) as usize
-}
-
-/// Converts the physical address to T.
-pub fn pa_as_mut<T>(pa: PhysAddr) -> &'static mut T {
-    unsafe { (pa as *mut T).as_mut().unwrap() }
 }
 
 #[cfg(test)]

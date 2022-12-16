@@ -12,31 +12,33 @@ SECTIONS
     .text : {
         *(.text.entry)
 
-        . = ALIGN(4096);
-        *(.text.trampoline)
-
-        . = ALIGN(4096);
+        . = ALIGN(0x1000);
         *(.text .text.*)
 
-        . = ALIGN(4096);
+        . = ALIGN(0x1000);
+        _trampoline = .;
+        *(trampoline)
+
+        . = ALIGN(0x1000);
+        ASSERT( . - _trampoline <= 0x1000, "trampoline larger then one page.")
         PROVIDE(etext = .);
     }
 
     .rodata : {
-        . = ALIGN(4096);
+        . = ALIGN(0x1000);
         *(.rodata.*)
     }
 
     .data : {
-        . = ALIGN(4096);
+        . = ALIGN(0x1000);
         *(.data*)
     }
 
     .bss : {
-        . = ALIGN(4096);
+        . = ALIGN(0x1000);
         *(.sbss .bss .bss.*)
     }
 
-    . = ALIGN(4096);
+    . = ALIGN(0x1000);
     PROVIDE(end = .);
 }

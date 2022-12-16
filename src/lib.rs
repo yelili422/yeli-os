@@ -27,13 +27,12 @@ pub mod syscall;
 global_asm!(include_str!("boot/entry.S"));
 
 pub fn init() {
-    logger::init(LevelFilter::Debug).unwrap();
-    info!("Initializing the system...");
+    logger::init(LevelFilter::Debug).expect("logger init failed.");
+    info!("Initializing the system...🤨");
 
-    mem::init();
-    // proc::init();
+    unsafe { mem::init() };
+    proc::init();
     // interrupt::init();
-
 }
 
 #[cfg(test)]
@@ -47,7 +46,6 @@ pub extern "C" fn _start() -> ! {
     info!("It did not crash!");
     shutdown()
 }
-
 
 #[test_case]
 fn test_assertion() {

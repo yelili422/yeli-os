@@ -2,123 +2,118 @@ use core::{
     alloc::{GlobalAlloc, Layout},
     ops::Deref,
     panic,
-    ptr::null_mut,
+    ptr::{null_mut, NonNull},
 };
 
-use log::{info, trace};
+use log::{debug, error};
 use spin::Mutex;
 
-use crate::mem::{
-    address::{pa_as_mut, PhysAddr},
-    allocator::list_allocator::ListAllocator,
-    page::{PageSize, Size4KiB},
+use crate::{
+    mem::{
+        address::{as_mut, PhysicalAddress},
+        PAGE_SIZE,
+    },
+    pa2va, va2pa,
 };
 
-pub mod list_allocator;
+use self::buddy_allocator::BuddyAllocator;
 
-pub trait Allocator {
-    fn free(&mut self, pa: PhysAddr);
-    fn alloc(&mut self) -> Option<PhysAddr>;
+mod buddy_allocator;
+mod bump_allocator;
+// mod list_allocator;
+
+pub trait FrameAllocator {
+    fn allocate(&mut self) -> Option<PhysicalAddress>;
+    fn free(&mut self, pa: PhysicalAddress);
 }
 
-pub struct GlobalAllocator {
-    inner: Mutex<Option<ListAllocator>>,
+pub struct LockedAllocator<const ORDER: usize> {
+    inner: Mutex<Option<BuddyAllocator<ORDER>>>,
 }
 
-impl GlobalAllocator {
+impl<const ORDER: usize> LockedAllocator<ORDER> {
     const fn new() -> Self {
-        GlobalAllocator {
+        LockedAllocator {
             inner: Mutex::new(None),
         }
     }
 
-    pub fn init(&mut self, pa_start: PhysAddr, pa_end: PhysAddr) {
-        let mut allocator = ListAllocator::new(pa_start, pa_end);
-
-        info!("Init allocator: {}", &allocator);
-        allocator.free_range();
-        *self.lock() = Some(allocator);
+    pub unsafe fn init(&mut self, pa_start: PhysicalAddress, pa_end: PhysicalAddress) {
+        debug!("locked_allocator: init from 0x{:x} to 0x{:x}", pa_start, pa_end);
+        let mut allocator = self.lock();
+        {
+            *allocator = Some(BuddyAllocator::<ORDER>::new(
+                NonNull::new_unchecked(pa_start as *mut _),
+                NonNull::new_unchecked(pa_end as *mut _),
+            ))
+        }
     }
 }
 
-// TODO: this is a temporary implement.
-unsafe impl GlobalAlloc for GlobalAllocator {
+unsafe impl<const ORDER: usize> GlobalAlloc for LockedAllocator<ORDER> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        trace!("allocate: {:?}", layout);
-        let size = layout.size() as u64;
-
-        if size > Size4KiB::SIZE {
-            return null_mut();
-        }
+        debug!("allocator: allocate {:?}", layout);
 
         match *self.lock() {
-            Some(ref mut allocator) => {
-                if let Some(page) = allocator.alloc() {
-                    pa_as_mut(page)
-                } else {
+            Some(ref mut allocator) => match allocator.allocate(layout) {
+                Ok(pa) => as_mut(pa2va!(pa as u64)),
+                Err(_) => {
+                    error!("allocate finished, but return a null pointer.");
                     null_mut()
                 }
-            }
+            },
             _ => panic!(""),
         }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        trace!("dealloc: {:?}", layout);
+        debug!("dealloc: {:?}", layout);
 
         match *self.lock() {
             Some(ref mut allocator) => {
-                allocator.free(ptr as u64);
+                allocator.free(NonNull::new_unchecked(va2pa!(ptr as u64) as *mut _), layout);
             }
             _ => panic!(""),
         }
     }
 }
 
-impl Deref for GlobalAllocator {
-    type Target = Mutex<Option<ListAllocator>>;
+impl<const B: usize> Deref for LockedAllocator<B> {
+    type Target = Mutex<Option<BuddyAllocator<B>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-#[derive(Debug)]
-pub enum MallocErr {
-    NotEnoughMemory,
-}
-
 #[global_allocator]
-pub static mut FRAME_ALLOCATOR: GlobalAllocator = GlobalAllocator::new();
+pub static mut FRAME_ALLOCATOR: LockedAllocator<16> = LockedAllocator::<16>::new();
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: Layout) -> ! {
-    panic!("allocation error: {:?}", layout)
+    panic!("allocation error: size: {}, align: {}", layout.size(), layout.align())
 }
 
-pub fn allocate() -> Result<PhysAddr, MallocErr> {
-    unsafe {
-        match *FRAME_ALLOCATOR.lock() {
-            Some(ref mut allocator) => match allocator.alloc() {
-                Some(page) => Ok(page),
-                _ => Err(MallocErr::NotEnoughMemory),
-            },
-            _ => panic!(),
-        }
+pub fn alloc_one_page() -> Option<PhysicalAddress> {
+    let pg_size = PAGE_SIZE as usize;
+    let page =
+        unsafe { FRAME_ALLOCATOR.alloc(Layout::from_size_align_unchecked(pg_size, pg_size)) };
+    if page.is_null() {
+        None
+    } else {
+        Some(page as u64)
     }
 }
 
-pub fn free(address: PhysAddr) {
-    unsafe {
-        if let Some(ref mut allocator) = *FRAME_ALLOCATOR.lock() {
-            allocator.free(address);
-        }
-    }
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AllocationError {
+    HeapExhausted,
+    InvalidSize,
 }
 
 #[cfg(test)]
 mod tests {
-    use alloc::{boxed::Box, vec::Vec};
+    use alloc::{boxed::Box, vec, vec::Vec};
 
     #[test_case]
     fn test_heap_alloc() {
@@ -132,6 +127,12 @@ mod tests {
         }
         for (i, val) in v.iter().take(500).enumerate() {
             assert_eq!(*val, i);
+        }
+
+        let mut p = vec![0; 2 * 4096 as usize].into_boxed_slice();
+        for i in p.iter_mut() {
+            *i = 5;
+            assert_eq!(*i, 5);
         }
     }
 }

@@ -4,7 +4,7 @@ use log::trace;
 
 use crate::{
     is_aligned,
-    mem::{address::PhysAddr, allocator::Allocator, KERNEL_PG_SIZE},
+    mem::{address::PhysicalAddress, allocator::FrameAllocator, PAGE_SIZE},
     pg_round_up,
 };
 
@@ -15,15 +15,15 @@ struct Link {
 
 #[derive(Debug)]
 pub struct ListAllocator {
-    pa_start: PhysAddr,
-    pa_end: PhysAddr,
+    pa_start: PhysicalAddress,
+    pa_end: PhysicalAddress,
     free_list: *mut Link,
 }
 
 impl ListAllocator {
-    pub fn new(pa_start: PhysAddr, pa_end: PhysAddr) -> Self {
+    pub fn new(pa_start: PhysicalAddress, pa_end: PhysicalAddress) -> Self {
         ListAllocator {
-            pa_start: pg_round_up!(pa_start, KERNEL_PG_SIZE),
+            pa_start: pg_round_up!(pa_start, PAGE_SIZE),
             pa_end,
             free_list: null_mut(),
         }
@@ -33,7 +33,7 @@ impl ListAllocator {
         let mut p = self.pa_start;
         while p <= self.pa_end {
             self.free(p);
-            p += KERNEL_PG_SIZE;
+            p += PAGE_SIZE as u64;
         }
         trace!("allocator: free range from 0x{:x} to 0x{:x} finished.", self.pa_start, p);
     }
@@ -58,13 +58,29 @@ impl fmt::Display for ListAllocator {
     }
 }
 
-impl Allocator for ListAllocator {
-    fn free(&mut self, pa: PhysAddr) {
-        assert!(is_aligned!(pa, KERNEL_PG_SIZE));
+impl FrameAllocator for ListAllocator {
+    fn allocate(&mut self) -> Option<PhysicalAddress> {
+        let p = self.free_list;
+        if p != null_mut() {
+            unsafe {
+                self.free_list = (*p).next;
+                for p in slice::from_raw_parts_mut(p as *mut u8, PAGE_SIZE as usize) {
+                    *p = 2;
+                }
+            }
+            debug!("allocator: alloc new page at: 0x{:x}", p as u64);
+            Some(p as u64)
+        } else {
+            None
+        }
+    }
+
+    fn free(&mut self, pa: PhysicalAddress) {
+        assert!(is_aligned!(pa, PAGE_SIZE));
         assert!(pa >= self.pa_start && pa <= self.pa_end);
 
         unsafe {
-            for p in slice::from_raw_parts_mut(pa as *mut u8, KERNEL_PG_SIZE as usize) {
+            for p in slice::from_raw_parts_mut(pa as *mut u8, PAGE_SIZE as usize) {
                 *p = 1; // Fill with junk to catch dangling refs.
             }
 
@@ -72,22 +88,6 @@ impl Allocator for ListAllocator {
 
             (*r).next = self.free_list;
             self.free_list = r;
-        }
-    }
-
-    fn alloc(&mut self) -> Option<PhysAddr> {
-        let p = self.free_list;
-        if p != null_mut() {
-            unsafe {
-                self.free_list = (*p).next;
-                for p in slice::from_raw_parts_mut(p as *mut u8, KERNEL_PG_SIZE as usize) {
-                    *p = 2;
-                }
-            }
-            trace!("allocator: alloc new page at: 0x{:x}", p as u64);
-            Some(p as u64)
-        } else {
-            None
         }
     }
 }

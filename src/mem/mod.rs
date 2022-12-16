@@ -1,23 +1,35 @@
-use crate::{addr, mem::allocator::allocate, memset};
+use crate::{addr, mem::allocator::alloc_one_page, proc::ContextId};
 
 use self::{
-    address::pa_as_mut,
+    address::{as_mut, Address, VirtualAddress, MAX_VA},
     allocator::FRAME_ALLOCATOR,
     page::{enable_paging, PTEFlags, PageSize, PageTable, Size4KiB},
 };
 
 pub mod address;
-mod allocator;
+pub mod allocator;
 pub mod page;
 
+/// The page size of kernel.
+pub const PAGE_SIZE: u64 = Size4KiB::SIZE;
+
 /// The start address of kernel.
-const KERNEL_BASE: u64 = 0x8020_0000;
+// NOTE: Always keep same with `BASE_ADDRESS` in linker.ld.
+pub const KERNEL_BASE: Address = 0x8020_0000;
 
 /// The end address of physical memory.
-const MEM_END: u64 = KERNEL_BASE + 1024 * 1024 * 10;
+pub const MEM_END: Address = KERNEL_BASE + 1024 * 1024 * 10;
 
-/// The page size of kernel.
-const KERNEL_PG_SIZE: u64 = Size4KiB::SIZE;
+/// The address of trampoline.
+pub const TRAMPOLINE: Address = MAX_VA - PAGE_SIZE + 1;
+
+/// The address of trap frame.
+pub const TRAP_FRAME: Address = TRAMPOLINE - PAGE_SIZE;
+
+/// The kernel stack address of this process.
+pub const fn kernel_stack(pid: ContextId) -> VirtualAddress {
+    TRAMPOLINE - (pid as u64 + 1) * 2 * PAGE_SIZE
+}
 
 /// Converts a linker identifier to address.
 #[macro_export]
@@ -37,11 +49,9 @@ extern "C" {
 }
 
 /// Make a direct map page table for the kernel.
-fn kvmmake() -> &'static mut PageTable {
-    let pa = allocate().expect("alloc root page table failed.");
-    memset!(pa, 0, KERNEL_PG_SIZE);
-
-    let pt = pa_as_mut::<PageTable>(pa);
+unsafe fn kvm_make() -> &'static mut PageTable {
+    let pa = alloc_one_page().expect("kvm_make: allocate page failed.");
+    let pt = as_mut::<PageTable>(pa);
 
     // map kernel text executable and read-only.
     pt.map(KERNEL_BASE, KERNEL_BASE, addr!(etext) - KERNEL_BASE, PTEFlags::R | PTEFlags::X);
@@ -49,15 +59,24 @@ fn kvmmake() -> &'static mut PageTable {
     // map kernel data and the physical RAM we'll make use of.
     pt.map(addr!(etext), addr!(etext), MEM_END - addr!(etext), PTEFlags::R | PTEFlags::W);
 
+    // Map the trampoline for trap entry/exit to the hightest virtual
+    // address in the kernel.
+    // pt.map(TRAMPOLINE, addr!(trampoline), PAGE_SIZE, PTEFlags::R | PTEFlags::W);
+
+    // Allocate a page for each process's kernel stack.
+    // Map it high in memory, followed by an invalid
+    // guard page.
+    // for pid in 0..MAX_PROC {
+    //     let page = alloc_one_page().expect("kvm_make: allocate kernel stack failed.");
+    //     pt.map(kernel_stack(pid), page, PAGE_SIZE, PTEFlags::R | PTEFlags::W);
+    // }
+
     pt
 }
 
-pub fn init() {
-    #[allow(unused_unsafe)]
-    unsafe {
-        FRAME_ALLOCATOR.init(addr!(end), MEM_END);
+pub unsafe fn init() {
+    FRAME_ALLOCATOR.init(addr!(end), MEM_END);
 
-        let kernel_pagetable = kvmmake();
-        enable_paging(kernel_pagetable.make_satp());
-    }
+    let kernel_pagetable = kvm_make();
+    enable_paging(kernel_pagetable.make_satp());
 }

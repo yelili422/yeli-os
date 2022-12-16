@@ -33,7 +33,17 @@ $(KERNEL_BIN): $(KERNEL_ELF)
 	@# and discord metadata to ensure machine finds the first instruction
 	rust-objcopy $(KERNEL_ELF) --strip-all -O binary $(KERNEL_BIN)
 
+.PHONY: build
+build: $(KERNEL_BIN)
+
+
 QEMU = qemu-system-riscv64
+# In virt platform, the physical address starts at 0x8000_0000,
+# the default memory size is 128MiB.
+# Hance the bootloader will be loaded to 0x8000_0000, and the
+# os bin file will be loaded to 0x8020_0000. We need to ensure
+# that the first instruction of the kernel is located at
+# physical address 0x8020_0000. We did it in linker.ld file.
 QEMU_ARGS = \
 	-machine virt \
 	-nographic \
@@ -51,7 +61,7 @@ clean:
 
 .PHONY: test
 test: $(KERNEL_BIN)
-	@cargo test
+	@cargo test --lib
 
 GDB = riscv64-unknown-elf-gdb
 DGB_CLIENT_ARGS = \
