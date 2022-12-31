@@ -1,0 +1,7 @@
+[package]
+name = "user_lib"
+version = "0.1.0"
+authors = ["YeLi <i@yeli.io>"]
+edition = "2021"
+
+[dependencies]
