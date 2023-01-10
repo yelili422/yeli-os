@@ -1,5 +1,12 @@
 YeLi-OS
 
+# Prerequisites
+
+- Rust (nightly version)
+- Cargo
+- make
+- QEMU
+
 # Quick Start
 
 1. Switch to nightly version of rust.
@@ -15,6 +22,9 @@ YeLi-OS
     ```
 
 3. Run
+
     ```shell
-    make run
+    cd kernel && make run
     ```
+
+    // TODO: build fs
