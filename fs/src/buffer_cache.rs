@@ -56,11 +56,11 @@ impl BlockCache {
         &mut *(self.get_addr(offset) as *mut T)
     }
 
-    pub fn read_from<T, V>(&self, offset: InBlockOffset, cb: impl FnOnce(&T) -> V) -> V {
+    pub fn read<T, V>(&self, offset: InBlockOffset, cb: impl FnOnce(&T) -> V) -> V {
         unsafe { cb(self.get_ref(offset)) }
     }
 
-    pub fn write_to<T, V>(&mut self, offset: InBlockOffset, cb: impl FnOnce(&mut T) -> V) -> V {
+    pub fn write<T, V>(&mut self, offset: InBlockOffset, cb: impl FnOnce(&mut T) -> V) -> V {
         unsafe { cb(self.get_mut(offset)) }
     }
 
@@ -98,7 +98,7 @@ impl BlockCacheBuffer {
         block_dev: Arc<dyn BlockDevice>,
     ) -> Arc<Mutex<BlockCache>> {
         if let Some((_, cache)) = self.buffer.iter().find(|&&(bid, _)| bid == block_id) {
-            Arc::clone(cache)
+            cache.clone()
         } else {
             // Not cached.
             // Recycle the unused buffer by LRU.
@@ -121,8 +121,8 @@ impl BlockCacheBuffer {
                 }
             }
 
-            let block = Arc::new(Mutex::new(BlockCache::new(block_id, Arc::clone(&block_dev))));
-            self.buffer.push_back((block_id, Arc::clone(&block)));
+            let block = Arc::new(Mutex::new(BlockCache::new(block_id, block_dev.clone())));
+            self.buffer.push_back((block_id, block.clone()));
 
             block
         }

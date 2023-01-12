@@ -1,12 +1,8 @@
-use fs::{
-    block_dev::{BlockDevice, BLOCK_SIZE},
-    FileSystem,
-};
+use fs::block_dev::{BlockDevice, BLOCK_SIZE};
 use spin::Mutex;
 use std::{
-    fs::{File, OpenOptions},
+    fs::File,
     io::{Read, Seek, SeekFrom, Write},
-    println,
 };
 
 pub struct BlockFile(pub Mutex<File>);

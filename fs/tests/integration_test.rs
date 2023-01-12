@@ -1,24 +1,17 @@
-use std::{fs::OpenOptions, sync::Arc};
-
-use fs::FileSystem;
-use log::info;
-use spin::Mutex;
-
-use crate::common::block_file::BlockFile;
-
 mod common;
 
+use fs::block_dev::InodeType;
+
 #[test]
-fn test_run() {
-    common::setup();
+fn test_create_file() {
+    let fs = common::setup();
+    let root = fs.root();
 
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open("target/fs.img")
-        .unwrap();
-    file.set_len(4096 * 512).unwrap();
+    for i in 1..10 {
+        let f = root.allocate(&i.to_string(), InodeType::File).unwrap();
+        assert_eq!(f.size(), 0);
 
-    let fs = FileSystem::create(Arc::new(BlockFile(Mutex::new(file))), 4096, 10).unwrap();
+        f.resize(i * 500).unwrap();
+        assert_eq!(f.size(), i * 500);
+    }
 }

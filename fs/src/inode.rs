@@ -1,12 +1,14 @@
-use core::{mem::size_of, slice::from_raw_parts_mut};
+use core::slice::{from_raw_parts, from_raw_parts_mut};
 
-use alloc::{string::String, sync::Arc};
+use alloc::{string::ToString, sync::Arc};
 
 use crate::{
     block_dev::{
-        BlockDevice, BlockId, DInode, DirEntry, InBlockOffset, InodeId, InodeType, SuperBlock,
+        BlockDevice, BlockId, DInode, DirEntry, InBlockOffset, InodeId, InodeType, BLOCK_SIZE,
+        DIR_ENTRY_SIZE, MAX_SIZE_ONE_INODE,
     },
     buffer_cache::block_cache,
+    FileSystem, FileSystemAllocationError,
 };
 
 /// In-memory copy of an inode.
@@ -17,35 +19,34 @@ use crate::{
 /// the index of data block.
 pub struct Inode {
     /// Block device.
-    dev:          Arc<dyn BlockDevice>,
-    /// Super block.
-    super_block:  Arc<SuperBlock>,
+    dev:             Arc<dyn BlockDevice>,
+    /// File system.
+    fs:              Arc<FileSystem>,
     /// Block id.
-    block_id:     BlockId,
+    block_id:        BlockId,
     /// Block offset.
-    block_offset: InBlockOffset,
+    in_block_offset: InBlockOffset,
     /// Inode number.
-    inode_num:    InodeId,
-    // TODO: a fs global lock.
+    pub inode_num:   InodeId,
 }
 
 impl Inode {
     pub fn from_inum(
         inode_num: InodeId,
         dev: Arc<dyn BlockDevice>,
-        super_block: Arc<SuperBlock>,
-    ) -> Self {
-        let (block_id, block_offset) = super_block.inode_pos(inode_num);
-        Self {
+        fs: Arc<FileSystem>,
+    ) -> Arc<Self> {
+        let (block_id, in_block_offset) = fs.inode_pos(inode_num);
+        Arc::new(Self {
             dev,
+            fs,
             block_id,
-            block_offset,
-            super_block,
+            in_block_offset,
             inode_num,
-        }
+        })
     }
 
-    pub fn from_path(path: &str, start_at: Inode) -> Option<Self> {
+    pub fn from_path(path: &str, start_at: Arc<Inode>) -> Option<Arc<Self>> {
         let mut ip = start_at;
         let mut path = path;
 
@@ -66,16 +67,16 @@ impl Inode {
         Some(ip)
     }
 
-    fn read_dinode<V>(&self, f: impl FnOnce(&DInode) -> V) -> V {
-        block_cache(self.block_id, Arc::clone(&self.dev))
+    pub fn read_dinode<V>(&self, f: impl FnOnce(&DInode) -> V) -> V {
+        block_cache(self.block_id, self.dev.clone())
             .lock()
-            .read_from(self.block_offset, f)
+            .read(self.in_block_offset, f)
     }
 
-    fn write_dinode<V>(&self, f: impl FnOnce(&mut DInode) -> V) -> V {
-        block_cache(self.block_id, Arc::clone(&self.dev))
+    pub fn write_dinode<V>(&self, f: impl FnOnce(&mut DInode) -> V) -> V {
+        block_cache(self.block_id, self.dev.clone())
             .lock()
-            .write_to(self.block_offset, f)
+            .write(self.in_block_offset, f)
     }
 
     pub fn is_valid(&self) -> bool {
@@ -94,44 +95,123 @@ impl Inode {
         self.read_dinode(|dinode| dinode.links_num as usize)
     }
 
-    pub fn look_up(&self, name: &str) -> Option<Inode> {
+    pub fn look_up(&self, name: &str) -> Option<Arc<Inode>> {
         assert_eq!(self.type_(), InodeType::Directory);
 
-        let dirent_size = size_of::<DirEntry>();
-        let files_num = self.size() / dirent_size;
+        let files_num = self.size() / DIR_ENTRY_SIZE;
 
         let dirent = &mut DirEntry::empty();
         for i in 0..files_num {
-            let read_size = self.read(dirent_size * i, unsafe {
-                from_raw_parts_mut(dirent as *mut _ as *mut u8, dirent_size)
+            let read_size = self.read_data(DIR_ENTRY_SIZE * i, unsafe {
+                from_raw_parts_mut(dirent as *mut _ as *mut u8, DIR_ENTRY_SIZE)
             });
 
-            assert_eq!(read_size, dirent_size);
+            assert_eq!(read_size, DIR_ENTRY_SIZE);
 
-            if String::from(dirent.name()) == name {
-                return Some(Inode::from_inum(
-                    dirent.inode_num,
-                    Arc::clone(&self.dev),
-                    Arc::clone(&self.super_block),
-                ));
+            if dirent.name() == name {
+                return Some(Inode::from_inum(dirent.inode_num, self.dev.clone(), self.fs.clone()));
             }
         }
 
         None
     }
 
+    /// Allocates a new empty inode under this inode directory.
+    pub fn allocate(
+        &self,
+        name: &str,
+        type_: InodeType,
+    ) -> Result<Arc<Inode>, FileSystemAllocationError> {
+        assert_eq!(self.type_(), InodeType::Directory);
+
+        match self.look_up(name) {
+            Some(quality) => {
+                if quality.type_() == type_ {
+                    return Err(FileSystemAllocationError::AlreadyExist(name.to_string(), type_));
+                }
+            }
+            _ => {}
+        }
+
+        let inode = self
+            .fs
+            .allocate_inode(type_)
+            .ok_or_else(|| FileSystemAllocationError::InodeExhausted)?;
+
+        let offset = self.size();
+        self.resize(offset + DIR_ENTRY_SIZE)?;
+        assert_eq!(self.size(), offset + DIR_ENTRY_SIZE);
+
+        let written = self.write_data(offset, unsafe {
+            let dirent = &DirEntry::new(name, inode.inode_num);
+            from_raw_parts(dirent as *const _ as *const u8, DIR_ENTRY_SIZE)
+        });
+        assert_eq!(written, DIR_ENTRY_SIZE);
+
+        Ok(inode)
+    }
+
     /// Reads data from this inode to buffer.
     ///
     /// Returns the size of read data.
-    pub fn read(&self, offset: usize, buf: &mut [u8]) -> usize {
-        self.read_dinode(|dinode| dinode.read(offset, buf, &self.dev))
+    pub fn read_data(&self, offset: usize, buf: &mut [u8]) -> usize {
+        self.read_dinode(|dinode| dinode.read_data(offset, buf, self.dev.clone()))
     }
 
     /// Writes data from buffer to inode.
     ///
     /// Returns the size of written data.
-    pub fn write(&self, offset: usize, buf: &[u8]) -> usize {
-        self.write_dinode(|dinode| dinode.write(offset, buf, &self.dev))
+    pub fn write_data(&self, offset: usize, buf: &[u8]) -> usize {
+        self.write_dinode(|dinode| dinode.write_data(offset, buf, self.dev.clone()))
+    }
+
+    fn set_size(&self, size: usize) {
+        self.write_dinode(|dinode| {
+            dinode.size = size as u32;
+        });
+    }
+
+    pub fn resize(&self, new_size: usize) -> Result<(), FileSystemAllocationError> {
+        if new_size > MAX_SIZE_ONE_INODE {
+            return Err(FileSystemAllocationError::TooLarge(new_size));
+        }
+
+        let old_size = self.size();
+        if new_size > old_size {
+            let in_block_offset = old_size % BLOCK_SIZE;
+            let mut increment = new_size - old_size;
+
+            if in_block_offset != 0 {
+                // has remaining space
+                if increment > BLOCK_SIZE - in_block_offset {
+                    increment -= BLOCK_SIZE - in_block_offset;
+                } else {
+                    self.set_size(new_size);
+                    return Ok(());
+                }
+            }
+
+            let base_idx = (old_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+            let needed_blocks = (increment + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+            for i in 0..needed_blocks {
+                let block_id = self
+                    .fs
+                    .allocate()
+                    .ok_or_else(|| FileSystemAllocationError::Exhausted(new_size))?;
+
+                self.write_dinode(|dinode| {
+                    dinode.set_block_id(base_idx + i, block_id, self.dev.clone());
+                })
+            }
+
+            self.set_size(new_size);
+            Ok(())
+        } else if new_size < old_size {
+            unimplemented!()
+        } else {
+            Ok(()) // invariable size
+        }
     }
 }
 
