@@ -1,7 +1,9 @@
 use core::mem::size_of;
 
-use crate::buffer_cache::block_cache;
 use alloc::sync::Arc;
+use spin::Mutex;
+
+use crate::block_cache::BlockCacheBuffer;
 
 /// The trait of block devices.
 ///
@@ -27,10 +29,10 @@ pub const BITMAP_PER_BLOCK: usize = BLOCK_SIZE * 8;
 ///
 /// We should keep `DInode` to take up the most of space in 1/n
 /// of `BLOCK_SIZE`. (i.e. `DINODE_SIZE == BLOCK_SIZE / 4`)
-const N_DIRECT: usize = 27;
+pub const N_DIRECT: usize = 27;
 
 /// Indirect blocks per block.
-const N_INDIRECT: usize = BLOCK_SIZE / size_of::<u32>();
+pub const N_INDIRECT: usize = BLOCK_SIZE / size_of::<u32>();
 
 /// The maximum data blocks of one inode.
 pub const MAX_BLOCKS_ONE_INODE: usize = N_DIRECT + N_INDIRECT + N_INDIRECT * N_INDIRECT;
@@ -61,8 +63,9 @@ pub type BlockId = u32;
 /// The block offset.
 pub type InBlockOffset = u32;
 
-/// Disk layout:
+/// Contains metadata about the file system.
 ///
+/// Disk layout:
 /// [ boot block | super block | inode bit map | inode blocks
 ///                               | data bit map | data blocks ]
 #[repr(C)]
@@ -110,6 +113,13 @@ impl SuperBlock {
     pub fn is_valid(&self) -> bool {
         self.magic == FS_MAGIC
     }
+
+    /// Gets block id and offset-in-block by inode-num.
+    pub fn inode_pos(&self, inum: InodeId) -> (BlockId, InBlockOffset) {
+        let block_id = inum / INODES_PER_BLOCK as u32 + self.inode_start;
+        let offset = (inum % INODES_PER_BLOCK as u32) * DINODE_SIZE as u32;
+        (block_id, offset)
+    }
 }
 
 /// The type of bitmap block, group of `BLOCK_SIZE`.
@@ -118,7 +128,7 @@ pub struct BitmapBlock([bool; BLOCK_SIZE]);
 
 impl BitmapBlock {
     pub fn allocate(&mut self) -> Option<usize> {
-        match self.0.iter().enumerate().find(|&(_, &used)| used == false) {
+        match self.0.iter().enumerate().find(|&(_, &used)| !used) {
             Some((idx, _)) => {
                 self.0[idx] = true;
                 Some(idx)
@@ -128,7 +138,7 @@ impl BitmapBlock {
     }
 
     pub fn free(&mut self, idx: usize) {
-        assert_eq!(self.0[idx], true);
+        assert_eq!(self.0[idx], true, "bitmap: This bit is already freed.");
         self.0[idx] = false;
     }
 }
@@ -176,6 +186,7 @@ impl DirEntry {
 /// The on-disk inodes are packed into a contiguous area of disk called
 /// the inode blocks.
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct DInode {
     /// File type.
     pub type_:     InodeType,
@@ -183,7 +194,7 @@ pub struct DInode {
     pub major:     InodeId,
     /// Minor device number.
     pub minor:     InodeId,
-    /// Number of links to inode in file system.
+    /// Counts the number of directory entries that refer to this inode.
     pub links_num: u32,
     /// Size of file (bytes).
     pub size:      u32,
@@ -192,6 +203,24 @@ pub struct DInode {
 }
 
 impl DInode {
+    pub fn new(
+        type_: InodeType,
+        major: InodeId,
+        minor: InodeId,
+        links_num: u32,
+        size: u32,
+        addresses: [BlockId; N_DIRECT],
+    ) -> Self {
+        Self {
+            type_,
+            major,
+            minor,
+            links_num,
+            size,
+            addresses,
+        }
+    }
+
     pub fn initialize(&mut self, type_: InodeType) {
         *self = Self {
             type_,
@@ -208,42 +237,65 @@ impl DInode {
     }
 
     /// Gets block id by inner index.
-    pub fn block_id(&self, idx: usize, block_dev: Arc<dyn BlockDevice>) -> BlockId {
+    pub fn block_id(
+        &self,
+        idx: usize,
+        block_dev: Arc<dyn BlockDevice>,
+        cache: Arc<Mutex<BlockCacheBuffer>>,
+    ) -> BlockId {
         assert!(idx < MAX_BLOCKS_ONE_INODE);
 
         if idx < N_DIRECT {
             self.addresses[idx]
         } else if idx < N_DIRECT + N_INDIRECT {
-            block_cache(self.major, block_dev.clone())
+            cache
+                .lock()
+                .get(self.major, block_dev.clone())
                 .lock()
                 .read(0, |index_block: &IndexBlock| index_block[idx - N_DIRECT])
         } else {
             let p = idx - (N_DIRECT + N_INDIRECT);
-            let major_block_id = block_cache(self.minor, block_dev.clone())
+            let major_block_id = cache
+                .lock()
+                .get(self.minor, block_dev.clone())
                 .lock()
                 .read(0, |minor_block: &IndexBlock| minor_block[p / N_INDIRECT]);
-            block_cache(major_block_id, block_dev.clone())
+            cache
+                .lock()
+                .get(major_block_id, block_dev.clone())
                 .lock()
                 .read(0, |major_block: &IndexBlock| major_block[p % N_INDIRECT])
         }
     }
 
     /// Sets block id to given inner index.
-    pub fn set_block_id(&mut self, idx: usize, block_id: BlockId, block_dev: Arc<dyn BlockDevice>) {
+    pub fn set_block_id(
+        &mut self,
+        idx: usize,
+        block_id: BlockId,
+        block_dev: Arc<dyn BlockDevice>,
+        cache: Arc<Mutex<BlockCacheBuffer>>,
+    ) {
         assert!(idx < MAX_BLOCKS_ONE_INODE);
 
         if idx < N_DIRECT {
             self.addresses[idx] = block_id;
         } else if idx < N_DIRECT + N_INDIRECT {
-            block_cache(self.major, block_dev.clone())
+            cache
+                .lock()
+                .get(self.major, block_dev.clone())
                 .lock()
                 .write(0, |index_block: &mut IndexBlock| index_block[idx - N_DIRECT] = block_id)
         } else {
             let p = idx - (N_DIRECT + N_INDIRECT);
-            let major_block_id = block_cache(self.minor, block_dev.clone())
+            let major_block_id = cache
+                .lock()
+                .get(self.minor, block_dev.clone())
                 .lock()
                 .read(0, |minor_block: &IndexBlock| minor_block[p / N_INDIRECT]);
-            block_cache(major_block_id, block_dev.clone())
+            cache
+                .lock()
+                .get(major_block_id, block_dev.clone())
                 .lock()
                 .write(0, |major_block: &mut IndexBlock| major_block[p % N_INDIRECT] = block_id)
         }
@@ -257,6 +309,7 @@ impl DInode {
         offset: usize,
         buf: &mut [u8],
         block_dev: Arc<dyn BlockDevice>,
+        cache: Arc<Mutex<BlockCacheBuffer>>,
     ) -> usize {
         let mut start = offset;
         // Ensure the end address does not exceed the safe range.
@@ -269,7 +322,12 @@ impl DInode {
             let incr = end.min((start_block + 1) * BLOCK_SIZE) - start;
             let dst = &mut buf[completed..completed + incr];
 
-            block_cache(self.block_id(start_block, block_dev.clone()), block_dev.clone())
+            cache
+                .lock()
+                .get(
+                    self.block_id(start_block, block_dev.clone(), cache.clone()),
+                    block_dev.clone(),
+                )
                 .lock()
                 .read(0, |data_block: &DataBlock| {
                     // Copy data from this block.
@@ -288,7 +346,13 @@ impl DInode {
     /// Writes data from buffer to current disk inode.
     ///
     /// Returns the size of written data.
-    pub fn write_data(&self, offset: usize, buf: &[u8], block_dev: Arc<dyn BlockDevice>) -> usize {
+    pub fn write_data(
+        &self,
+        offset: usize,
+        buf: &[u8],
+        block_dev: Arc<dyn BlockDevice>,
+        cache: Arc<Mutex<BlockCacheBuffer>>,
+    ) -> usize {
         let mut start = offset;
         // Ensure the end address does not exceed the safe range.
         let end = start + buf.len().min(self.size as usize - offset);
@@ -299,7 +363,12 @@ impl DInode {
             // Growth value is the minimum of the end address or the block boundary.
             let incr = end.min((start_block + 1) * BLOCK_SIZE) - start;
 
-            block_cache(self.block_id(start_block, block_dev.clone()), block_dev.clone())
+            cache
+                .lock()
+                .get(
+                    self.block_id(start_block, block_dev.clone(), cache.clone()),
+                    block_dev.clone(),
+                )
                 .lock()
                 .write(0, |data_block: &mut DataBlock| {
                     let src = &buf[completed..completed + incr];

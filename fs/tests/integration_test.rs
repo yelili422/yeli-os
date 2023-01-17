@@ -3,15 +3,23 @@ mod common;
 use fs::block_dev::InodeType;
 
 #[test]
-fn test_create_file() {
+fn it_works() {
+    let _fs = common::setup();
+}
+
+#[test]
+fn create_file() {
     let fs = common::setup();
-    let root = fs.root();
+    let root_lock = fs.root();
 
+    let mut root = root_lock.lock();
     for i in 1..10 {
-        let f = root.allocate(&i.to_string(), InodeType::File).unwrap();
-        assert_eq!(f.size(), 0);
+        let file_lock = root.create(&i.to_string(), InodeType::File).unwrap();
+        let mut file = file_lock.lock();
 
-        f.resize(i * 500).unwrap();
-        assert_eq!(f.size(), i * 500);
+        assert_eq!(file.size(), 0);
+
+        file.resize(i * 500).unwrap();
+        assert_eq!(file.size(), i * 500);
     }
 }

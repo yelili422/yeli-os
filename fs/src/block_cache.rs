@@ -1,7 +1,6 @@
 use core::mem::size_of;
 
 use alloc::{collections::VecDeque, sync::Arc};
-use lazy_static::lazy_static;
 use spin::Mutex;
 
 use crate::block_dev::{BlockDevice, BlockId, InBlockOffset, BLOCK_SIZE};
@@ -27,6 +26,11 @@ impl BlockCache {
             block_dev,
             modified: false,
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.modified = true;
+        self.cache.fill(0);
     }
 
     fn get_addr(&self, offset: usize) -> usize {
@@ -65,7 +69,7 @@ impl BlockCache {
     }
 
     /// Synchronize the cache back to disk.
-    pub fn flush(&mut self) {
+    pub fn sync(&mut self) {
         if !self.modified {
             return;
         }
@@ -77,10 +81,11 @@ impl BlockCache {
 
 impl Drop for BlockCache {
     fn drop(&mut self) {
-        self.flush();
+        self.sync();
     }
 }
 
+/// Linked list of all buffers. Sorted by how recently the buffer used.
 pub struct BlockCacheBuffer {
     buffer: VecDeque<(BlockId, Arc<Mutex<BlockCache>>)>,
 }
@@ -92,6 +97,9 @@ impl BlockCacheBuffer {
         }
     }
 
+    /// Look through buffer cache for block on device dev.
+    /// If not found, allocate a buffer.
+    /// In either case, return locked buffer.
     pub fn get(
         &mut self,
         block_id: BlockId,
@@ -128,26 +136,9 @@ impl BlockCacheBuffer {
         }
     }
 
-    pub fn flush_all(&mut self) {
+    pub fn flush(&mut self) {
         for (_, cache) in self.buffer.iter() {
-            cache.lock().flush()
+            cache.lock().sync()
         }
     }
-}
-
-lazy_static! {
-    /// Linked list of all buffers. Sorted by how recently the buffer used.
-    pub static ref BLOCK_CACHE_BUFFER: Mutex<BlockCacheBuffer> =
-        Mutex::new(BlockCacheBuffer::new());
-}
-
-/// Gets block in buffer cache by block id.
-///
-/// Provides the basic access capability for block devices.
-pub fn block_cache(block_id: BlockId, block_dev: Arc<dyn BlockDevice>) -> Arc<Mutex<BlockCache>> {
-    BLOCK_CACHE_BUFFER.lock().get(block_id, block_dev)
-}
-
-pub fn flush() {
-    BLOCK_CACHE_BUFFER.lock().flush_all();
 }
