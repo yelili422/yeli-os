@@ -5,12 +5,13 @@ use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
+use log::warn;
 use spin::Mutex;
 
 use crate::{
     block_dev::{
         BlockId, DInode, DirEntry, InBlockOffset, InodeId, InodeType, BLOCK_SIZE, DIR_ENTRY_SIZE,
-        MAX_SIZE_ONE_INODE, N_DIRECT,
+        INODES_PER_BLOCK, MAX_SIZE_ONE_INODE, N_DIRECT,
     },
     FileSystem, FileSystemAllocationError,
 };
@@ -30,9 +31,17 @@ impl InodeCacheBuffer {
         Self { cache: Vec::new() }
     }
 
-    pub fn get(&mut self, inum: InodeId, fs: Arc<FileSystem>) -> Option<Arc<Mutex<Inode>>> {
-        if inum > fs.sb.inodes_num {
-            return None;
+    pub fn get(
+        &mut self,
+        inum: InodeId,
+        fs: Arc<FileSystem>,
+    ) -> Result<Arc<Mutex<Inode>>, InodeNotExists> {
+        if inum > fs.sb.inode_blocks_num * INODES_PER_BLOCK as u32 {
+            warn!(
+                "try to obtain an inode out of the range, inum: {}, max_inode_num: {}",
+                inum, fs.sb.inode_blocks_num
+            );
+            return Err(InodeNotExists(inum));
         }
 
         if self.cache.len() == INODE_BUFFER_SIZE {
@@ -41,7 +50,7 @@ impl InodeCacheBuffer {
         }
 
         if let Some((_, inode)) = self.cache.iter().find(|(id, _)| *id == inum) {
-            Some(inode.clone())
+            Ok(inode.clone())
         } else {
             let (block_id, in_block_offset) = fs.sb.inode_pos(inum);
 
@@ -62,7 +71,7 @@ impl InodeCacheBuffer {
             )));
 
             self.cache.push((inum, inode.clone()));
-            Some(inode)
+            Ok(inode)
         }
     }
 }
@@ -198,10 +207,10 @@ impl Inode {
             assert_eq!(read_size, DIR_ENTRY_SIZE);
 
             if dirent.name() == name {
-                return match fs.get_inode(dirent.inode_num) {
-                    Some(inode) => Some(inode),
-                    None => panic!(),
-                };
+                let inode = fs
+                    .get_inode(dirent.inode_num)
+                    .expect("failed to get an inode from the directory entry.");
+                return Some(inode);
             }
         }
 
@@ -319,6 +328,10 @@ impl Inode {
         }
     }
 }
+
+/// The inode doesn't exists.
+#[derive(Debug, Clone, Copy)]
+pub struct InodeNotExists(InodeId);
 
 /// Skips the next path element.
 ///

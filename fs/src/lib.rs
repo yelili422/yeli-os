@@ -10,8 +10,8 @@ use block_dev::{
     DINODE_SIZE,
 };
 use core::mem::size_of;
-use inode::{Inode, InodeCacheBuffer};
-use log::info;
+use inode::{Inode, InodeCacheBuffer, InodeNotExists};
+use log::{info, warn};
 use spin::Mutex;
 
 use crate::block_dev::{MAX_BLOCKS_ONE_INODE, MAX_SIZE_ONE_INODE};
@@ -40,15 +40,17 @@ pub struct FileSystem {
 impl FileSystem {
     pub fn create(
         dev: Arc<dyn BlockDevice>,
-        block_cache: Arc<Mutex<BlockCacheBuffer>>,
-        inode_cache: Arc<Mutex<InodeCacheBuffer>>,
         total_blocks: u32,
         inode_blocks: u32,
     ) -> Result<Arc<Self>, FileSystemCreateError> {
-        info!("fs: block size: {}", BLOCK_SIZE);
-        info!("fs: inode size: {}", DINODE_SIZE);
+        info!("fs: block size: {} bytes", BLOCK_SIZE);
+        info!("fs: inode size: {} bytes", DINODE_SIZE);
         info!("fs: max blocks of one inode: {}", MAX_BLOCKS_ONE_INODE);
-        info!("fs: max size of one inode: {}", MAX_SIZE_ONE_INODE);
+        info!(
+            "fs: max size of one inode: {} Bytes({} MB)",
+            MAX_SIZE_ONE_INODE,
+            MAX_SIZE_ONE_INODE / 1024
+        );
 
         let inode_bmap_blocks = inode_blocks * BLOCK_SIZE as u32 / size_of::<DInode>() as u32 + 1;
         let inode_area = inode_bmap_blocks + inode_blocks;
@@ -62,6 +64,8 @@ impl FileSystem {
         let inode_start = 3;
         let data_bmap_start = inode_start + inode_blocks;
         let data_start = data_bmap_start + data_bmap_blocks;
+
+        let block_cache = Arc::new(Mutex::new(BlockCacheBuffer::new()));
 
         // Clear all non-data blocks.
         for i in 0..data_start {
@@ -94,13 +98,12 @@ impl FileSystem {
 
         block_cache.lock().flush();
 
-        let fs = FileSystem::open(dev, block_cache.clone(), inode_cache.clone())
-            .expect("Create file system failed.");
+        let fs = FileSystem::open(dev).expect("Failed to create file system.");
 
         // Create the root inode and initialize it.
         let root_inode = fs
             .allocate_inode(InodeType::Directory)
-            .expect("Create root inode failed.");
+            .expect("Failed to create the root inode.");
         assert_eq!(root_inode.lock().inode_num, 0);
 
         block_cache.lock().flush();
@@ -108,11 +111,10 @@ impl FileSystem {
         Ok(fs)
     }
 
-    pub fn open(
-        dev: Arc<dyn BlockDevice>,
-        block_cache: Arc<Mutex<BlockCacheBuffer>>,
-        inode_cache: Arc<Mutex<InodeCacheBuffer>>,
-    ) -> Result<Arc<Self>, FileSystemInvalid> {
+    pub fn open(dev: Arc<dyn BlockDevice>) -> Result<Arc<Self>, FileSystemInvalid> {
+        let block_cache = Arc::new(Mutex::new(BlockCacheBuffer::new()));
+        let inode_cache = Arc::new(Mutex::new(InodeCacheBuffer::new()));
+
         let mut lock = block_cache.lock();
         lock.get(1, dev.clone())
             .lock()
@@ -140,15 +142,16 @@ impl FileSystem {
                 .write(0, |inode_bmap: &mut BitmapBlock| inode_bmap.allocate())
             // release the lock of block cache here
         } {
-            let inode = self
-                .inode_cache
-                .lock()
-                .get(inum as InodeId, self.clone())
-                .unwrap();
-            inode.lock().update_dinode(|dinode| dinode.initialize(type_));
-
-            Some(inode)
+            if let Ok(inode) = self.inode_cache.lock().get(inum as InodeId, self.clone()) {
+                inode
+                    .lock()
+                    .update_dinode(|dinode| dinode.initialize(type_));
+                Some(inode)
+            } else {
+                panic!("failed to access the inode just allocated: {}", inum);
+            }
         } else {
+            warn!("failed to allocate an inode.");
             None
         }
     }
@@ -176,7 +179,7 @@ impl FileSystem {
         self.get_inode(0).unwrap()
     }
 
-    pub fn get_inode(self: &Arc<Self>, inum: InodeId) -> Option<Arc<Mutex<Inode>>> {
+    fn get_inode(self: &Arc<Self>, inum: InodeId) -> Result<Arc<Mutex<Inode>>, InodeNotExists> {
         self.inode_cache.lock().get(inum, self.clone())
     }
 }

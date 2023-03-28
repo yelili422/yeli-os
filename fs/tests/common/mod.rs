@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Once},
 };
 
-use fs::{block_cache::BlockCacheBuffer, inode::InodeCacheBuffer, FileSystem};
+use fs::FileSystem;
 use log::LevelFilter;
 use spin::Mutex;
 
@@ -30,27 +30,16 @@ pub fn setup() -> Arc<FileSystem> {
             .unwrap();
         file.set_len(4096 * 512).unwrap();
 
-        FileSystem::create(
-            Arc::new(BlockFile(Mutex::new(file))),
-            Arc::new(Mutex::new(BlockCacheBuffer::new())),
-            Arc::new(Mutex::new(InodeCacheBuffer::new())),
-            4096,
-            10,
-        )
-        .unwrap();
+        FileSystem::create(Arc::new(BlockFile(Mutex::new(file))), 4096, 1).unwrap();
     });
 
-    FileSystem::open(
-        Arc::new(BlockFile(Mutex::new(
-            OpenOptions::new()
-                .read(true)
-                .write(true)
-                .create(true)
-                .open(FS_PATH)
-                .unwrap(),
-        ))),
-        Arc::new(Mutex::new(BlockCacheBuffer::new())),
-        Arc::new(Mutex::new(InodeCacheBuffer::new())),
-    )
+    FileSystem::open(Arc::new(BlockFile(Mutex::new(
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(FS_PATH)
+            .unwrap(),
+    ))))
     .unwrap()
 }

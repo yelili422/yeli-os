@@ -14,7 +14,7 @@ pub trait BlockDevice: Send + Sync {
 }
 
 /// The size of one block.
-pub const BLOCK_SIZE: usize = 512;
+pub const BLOCK_SIZE: usize = 4096; // Bytes
 
 /// File system magic number for sanity check.
 const FS_MAGIC: u32 = 0x102030;
@@ -76,9 +76,9 @@ pub struct SuperBlock {
     /// Size of file system image (blocks).
     pub size:             u32,
     /// Number of data blocks.
-    pub blocks_num:       u32,
+    pub data_blocks_num:  u32,
     /// Number of inodes.
-    pub inodes_num:       u32,
+    pub inode_blocks_num: u32,
     /// Block number of first free inode map block.
     pub inode_bmap_start: InodeId,
     /// Block number of first inode block.
@@ -93,8 +93,8 @@ impl SuperBlock {
     pub fn initialize(
         &mut self,
         size: u32,
-        blocks_num: u32,
-        inodes_num: u32,
+        data_blocks_num: u32,
+        inode_blocks_num: u32,
         inode_bmap_start: InodeId,
         inode_start: InodeId,
         data_bmap_start: InodeId,
@@ -102,8 +102,8 @@ impl SuperBlock {
     ) {
         self.magic = FS_MAGIC;
         self.size = size;
-        self.blocks_num = blocks_num;
-        self.inodes_num = inodes_num;
+        self.data_blocks_num = data_blocks_num;
+        self.inode_blocks_num = inode_blocks_num;
         self.inode_start = inode_start;
         self.data_bmap_start = data_bmap_start;
         self.data_start = data_start;
@@ -128,7 +128,7 @@ pub struct BitmapBlock([bool; BLOCK_SIZE]);
 
 impl BitmapBlock {
     pub fn allocate(&mut self) -> Option<usize> {
-        match self.0.iter().enumerate().find(|&(_, &used)| !used) {
+        match self.0.iter().enumerate().find(|&(_, used)| !used) {
             Some((idx, _)) => {
                 self.0[idx] = true;
                 Some(idx)
@@ -408,8 +408,8 @@ mod tests {
             SuperBlock {
                 magic:            0,
                 size:             0,
-                blocks_num:       0,
-                inodes_num:       0,
+                data_blocks_num:  0,
+                inode_blocks_num: 0,
                 inode_bmap_start: 0,
                 inode_start:      0,
                 data_bmap_start:  0,
