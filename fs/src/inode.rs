@@ -5,13 +5,13 @@ use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
-use log::warn;
+use log::{debug, warn};
 use spin::Mutex;
 
 use crate::{
     block_dev::{
         BlockId, DInode, DirEntry, InBlockOffset, InodeId, InodeType, BLOCK_SIZE, DIR_ENTRY_SIZE,
-        INODES_PER_BLOCK, MAX_SIZE_ONE_INODE, N_DIRECT,
+        MAX_SIZE_ONE_INODE, N_DIRECT,
     },
     FileSystem, FileSystemAllocationError,
 };
@@ -36,43 +36,47 @@ impl InodeCacheBuffer {
         inum: InodeId,
         fs: Arc<FileSystem>,
     ) -> Result<Arc<Mutex<Inode>>, InodeNotExists> {
-        if inum > fs.sb.inode_blocks_num * INODES_PER_BLOCK as u32 {
+        if inum > fs.max_inode_num() {
             warn!(
                 "try to obtain an inode out of the range, inum: {}, max_inode_num: {}",
-                inum, fs.sb.inode_blocks_num
+                inum,
+                fs.max_inode_num()
             );
             return Err(InodeNotExists(inum));
         }
 
         if self.cache.len() == INODE_BUFFER_SIZE {
-            // TODO:
-            unimplemented!();
+            let (id, _) = self.cache.remove(INODE_BUFFER_SIZE - 1);
+            debug!("remove inode {} from cache", id);
         }
 
-        if let Some((_, inode)) = self.cache.iter().find(|(id, _)| *id == inum) {
-            Ok(inode.clone())
-        } else {
-            let (block_id, in_block_offset) = fs.sb.inode_pos(inum);
+        let inode = match self.cache.iter().position(|&(id, _)| id == inum) {
+            Some(pos) => {
+                let (_, inode) = self.cache.remove(pos);
+                inode
+            }
+            None => {
+                let (block_id, in_block_offset) = fs.sb.inode_pos(inum);
 
-            // Acquire cache buffer block.
-            let mut block_cache = fs.block_cache.lock();
+                // Acquire cache buffer block.
+                let mut block_cache = fs.block_cache.lock();
 
-            // Acquire block cache lock.
-            let block_lock = block_cache.get(block_id, fs.dev.clone());
-            let block = block_lock.lock();
+                // Acquire block cache lock.
+                let block_lock = block_cache.get(block_id, fs.dev.clone());
+                let block = block_lock.lock();
 
-            let dinode = unsafe { block.get_ref::<DInode>(in_block_offset) };
-            let inode = Arc::new(Mutex::new(Inode::new(
-                Arc::downgrade(&fs),
-                block_id,
-                in_block_offset,
-                inum,
-                dinode,
-            )));
-
-            self.cache.push((inum, inode.clone()));
-            Ok(inode)
-        }
+                let dinode = unsafe { block.get_ref::<DInode>(in_block_offset) };
+                Arc::new(Mutex::new(Inode::new(
+                    Arc::downgrade(&fs),
+                    block_id,
+                    in_block_offset,
+                    inum,
+                    dinode,
+                )))
+            }
+        };
+        self.cache.insert(0, (inum, inode.clone()));
+        Ok(inode)
     }
 }
 

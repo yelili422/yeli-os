@@ -7,7 +7,7 @@ use alloc::{string::String, sync::Arc};
 use block_cache::BlockCacheBuffer;
 use block_dev::{
     BitmapBlock, BlockDevice, BlockId, DInode, InodeId, InodeType, SuperBlock, BLOCK_SIZE,
-    DINODE_SIZE,
+    DINODE_SIZE, INODES_PER_BLOCK,
 };
 use core::mem::size_of;
 use inode::{Inode, InodeCacheBuffer, InodeNotExists};
@@ -181,6 +181,10 @@ impl FileSystem {
 
     fn get_inode(self: &Arc<Self>, inum: InodeId) -> Result<Arc<Mutex<Inode>>, InodeNotExists> {
         self.inode_cache.lock().get(inum, self.clone())
+    }
+
+    fn max_inode_num(self: &Arc<Self>) -> InodeId {
+        self.sb.inode_blocks_num * INODES_PER_BLOCK as u32
     }
 }
 
