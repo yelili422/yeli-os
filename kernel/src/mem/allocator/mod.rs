@@ -91,7 +91,7 @@ pub static mut FRAME_ALLOCATOR: LockedAllocator<16> = LockedAllocator::<16>::new
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: Layout) -> ! {
-    panic!("allocation error: size: {}, align: {}", layout.size(), layout.align())
+    panic!("allocation error: size: {} bytes, align: {}", layout.size(), layout.align())
 }
 
 pub fn alloc_one_page() -> Option<PhysicalAddress> {

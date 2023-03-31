@@ -25,6 +25,8 @@ impl TaskManager {
 
     pub fn user_init(&mut self) {
         let pid = self.alloc_pid();
+        assert_eq!(pid, 0, "The first pid is not 0");
+
         let mut proc = Proc::new(pid);
 
         // Prepare for the very first "return" form kernel to user.

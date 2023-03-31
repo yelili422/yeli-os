@@ -13,9 +13,9 @@ use crate::{
     mem::{
         address::{as_mut, px, PhysicalAddress, VirtualAddress, MAX_VA, PG_SHIFT},
         allocator::alloc_one_page,
-        PAGE_SIZE, TRAMPOLINE, TRAPFRAME,
+        PAGE_SIZE,
     },
-    memset, pa2va, pg_round_down, va2pa,
+    pa2va, pg_round_down,
 };
 
 // TODO: These methods only used for kernel address space.
@@ -37,7 +37,7 @@ macro_rules! pa2va {
 }
 
 bitflags! {
-    #[derive(Default)]
+    #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
     pub struct PTEFlags: usize {
         const V = 1 << 0; // VALID
         const R = 1 << 1; // READABLE
@@ -77,7 +77,7 @@ impl PTE {
     }
 
     pub fn flags(&self) -> PTEFlags {
-        unsafe { PTEFlags::from_bits_unchecked(self.0.get_bits(0..8)) }
+        PTEFlags::from_bits_retain(self.0.get_bits(0..8))
     }
 
     pub fn is_valid(&self) -> bool {
@@ -137,11 +137,8 @@ impl PageTable {
     ) {
         assert!(size > 0);
         debug!(
-            "page_table: map 0x{:x} to 0x{:x}, size: {}, flags: {:b}",
-            va,
-            pa,
-            size,
-            perm.bits()
+            "page_table: map 0x{:x} to 0x{:x}, size: {} bytes, flags: {:?}",
+            va, pa, size, perm
         );
 
         let mut va = pg_round_down!(va, PAGE_SIZE);

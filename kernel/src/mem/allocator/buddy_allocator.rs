@@ -50,12 +50,15 @@ impl<const ORDER: usize> BuddyAllocator<ORDER> {
         let min_block_size = heap_size >> (ORDER - 1);
 
         debug!(
-            "buddy_allocator: init from 0x{:x} to 0x{:x}, size: {}B",
+            "buddy_allocator: init from 0x{:x} to 0x{:x}, size: {} bytes",
             heap_base.as_ptr() as usize,
             heap_end.as_ptr() as usize,
             heap_size
         );
-        debug!("buddy_allocator: order: {}, the minimum block size: {}", ORDER, min_block_size);
+        debug!(
+            "buddy_allocator: order: {}, the minimum block size: {} bytes",
+            ORDER, min_block_size
+        );
 
         assert!(
             min_block_size >= size_of::<FreeBlock>(),
