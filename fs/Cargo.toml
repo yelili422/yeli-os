@@ -13,3 +13,7 @@ log = "0.4.14"
 
 [dev-dependencies]
 env_logger = "0.10.0"
+
+[[bin]]
+name = "mkfs"
+doc = false

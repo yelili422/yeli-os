@@ -30,7 +30,7 @@ pub fn setup() -> Arc<FileSystem> {
             .unwrap();
         file.set_len(4096 * 512).unwrap();
 
-        FileSystem::create(Arc::new(BlockFile(Mutex::new(file))), 4096, 1).unwrap();
+        FileSystem::create(Arc::new(BlockFile(Mutex::new(file))), 4096, 10).unwrap();
     });
 
     FileSystem::open(Arc::new(BlockFile(Mutex::new(

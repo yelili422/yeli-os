@@ -140,18 +140,27 @@ impl FileSystem {
                 .get(self.sb.inode_bmap_start, self.dev.clone())
                 .lock()
                 .write(0, |inode_bmap: &mut BitmapBlock| inode_bmap.allocate())
-            // release the lock of block cache here
+            // Release the lock of `block_cache` here.
         } {
-            if let Ok(inode) = self.inode_cache.lock().get(inum as InodeId, self.clone()) {
-                inode
-                    .lock()
-                    .update_dinode(|dinode| dinode.initialize(type_));
-                Some(inode)
-            } else {
-                panic!("failed to access the inode just allocated: {}", inum);
+            // The `inum` may be exceeding the limits of maximum number
+            // of inodes, so we can't use it directly.
+            if inum > self.max_inode_num() as usize {
+                warn!("Failed to allocate an inode: the new `inum` exceeds the max inum of inode.");
+                warn!("inum: {}, max_inum: {}", inum, self.max_inode_num());
+                return None;
+            }
+
+            match self.inode_cache.lock().get(inum as InodeId, self.clone()) {
+                Ok(inode) => {
+                    inode
+                        .lock()
+                        .update_dinode(|dinode| dinode.initialize(type_));
+                    Some(inode)
+                }
+                _ => panic!("Failed to access the inode just allocated: {}", inum),
             }
         } else {
-            warn!("failed to allocate an inode.");
+            warn!("Failed to allocate an inode: exceeding the range of inode bit map.");
             None
         }
     }

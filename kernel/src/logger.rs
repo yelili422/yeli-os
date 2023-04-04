@@ -1,21 +1,21 @@
-use log::{LevelFilter, Metadata, Record, SetLoggerError};
+use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
 
 use crate::println;
 
 struct Logger;
 
-impl log::Log for Logger {
+impl Log for Logger {
     fn enabled(&self, _metadata: &Metadata) -> bool {
-        false
+        unimplemented!()
     }
 
     fn log(&self, record: &Record) {
         let level = match record.level() {
-            log::Level::Error => "\x1b[31merror\x1b[0m",
-            log::Level::Warn => "\x1b[93mwarn \x1b[0m",
-            log::Level::Info => "\x1b[34minfo \x1b[0m",
-            log::Level::Debug => "\x1b[35mdebug\x1b[0m",
-            log::Level::Trace => "\x1b[96mtrace\x1b[0m",
+            Level::Error => "\x1b[31merror\x1b[0m",
+            Level::Warn => "\x1b[93mwarn \x1b[0m",
+            Level::Info => "\x1b[34minfo \x1b[0m",
+            Level::Debug => "\x1b[35mdebug\x1b[0m",
+            Level::Trace => "\x1b[96mtrace\x1b[0m",
         };
         println!("{} {}", level, record.args());
     }
