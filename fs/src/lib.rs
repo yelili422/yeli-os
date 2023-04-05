@@ -11,7 +11,7 @@ use block_dev::{
 };
 use core::mem::size_of;
 use inode::{Inode, InodeCacheBuffer, InodeNotExists};
-use log::{info, warn};
+use log::{debug, info, warn};
 use spin::Mutex;
 
 use crate::block_dev::{MAX_BLOCKS_ONE_INODE, MAX_SIZE_ONE_INODE};
@@ -40,24 +40,45 @@ pub struct FileSystem {
 impl FileSystem {
     pub fn create(
         dev: Arc<dyn BlockDevice>,
-        total_blocks: u32,
-        inode_blocks: u32,
+        total_blocks: u64,
+        inode_blocks: u64,
     ) -> Result<Arc<Self>, FileSystemCreateError> {
         info!("fs: block size: {} bytes", BLOCK_SIZE);
         info!("fs: inode size: {} bytes", DINODE_SIZE);
+        assert_eq!(
+            DINODE_SIZE,
+            BLOCK_SIZE / INODES_PER_BLOCK,
+            "The size of the inode needs to be adapted to the `block_size`"
+        );
+
         info!("fs: max blocks of one inode: {}", MAX_BLOCKS_ONE_INODE);
         info!(
-            "fs: max size of one inode: {} Bytes({} MB)",
+            "fs: max data size of one inode: {} Bytes({} MB)",
             MAX_SIZE_ONE_INODE,
             MAX_SIZE_ONE_INODE / 1024
         );
 
-        let inode_bmap_blocks = inode_blocks * BLOCK_SIZE as u32 / size_of::<DInode>() as u32 + 1;
+        let super_blocks = 1;
+        let logging_blocks = 1;
+
+        let inode_bmap_blocks = inode_blocks / (size_of::<BitmapBlock>() as u64) + 1;
         let inode_area = inode_bmap_blocks + inode_blocks;
 
-        let data_area = total_blocks - 2 - inode_area; // bitmap + data blocks
-        let data_bmap_blocks = (data_area / (1 + 8 * BLOCK_SIZE as u32)) as u32 + 1;
+        debug!("fs: total blocks: {}", total_blocks);
+        debug!("fs: inode blocks: {}", inode_blocks);
+        debug!("fs: inode bitmap blocks: {}", inode_bmap_blocks);
+
+        assert!(
+            total_blocks > super_blocks + logging_blocks + inode_area,
+            "No more space for data blocks."
+        );
+
+        let data_area = total_blocks - super_blocks - logging_blocks - inode_area; // bitmap + data blocks
+        let data_bmap_blocks = (data_area / (1 + 8 * BLOCK_SIZE as u64)) + 1;
         let data_blocks = data_area - data_bmap_blocks;
+
+        debug!("fs: data blocks: {}", data_blocks);
+        debug!("fs: data bitmap blocks: {}", data_bmap_blocks);
 
         let super_block_start = 1;
         let inode_bmap_start = 2;
@@ -193,7 +214,7 @@ impl FileSystem {
     }
 
     fn max_inode_num(self: &Arc<Self>) -> InodeId {
-        self.sb.inode_blocks_num * INODES_PER_BLOCK as u32
+        self.sb.inode_blocks_num * (INODES_PER_BLOCK as u64)
     }
 }
 

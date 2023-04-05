@@ -104,9 +104,9 @@ pub struct Inode {
     /// Minor device number.
     minor:     InodeId,
     /// Counts the number of directory entries that refer to this inode.
-    links_num: u32,
+    links_num: u64,
     /// Size of file (bytes).
-    size:      u32,
+    size:      u64,
     /// Data block addresses.
     addresses: [BlockId; N_DIRECT],
 }
@@ -188,7 +188,7 @@ impl Inode {
 
     fn set_size(&mut self, size: usize) {
         self.update_dinode(|dinode| {
-            dinode.size = size as u32;
+            dinode.size = size as u64;
         });
     }
 

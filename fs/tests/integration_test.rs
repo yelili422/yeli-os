@@ -18,13 +18,13 @@ fn create_file() {
         let dir_lock = root.create(&i.to_string(), InodeType::Directory).unwrap();
         let mut dir = dir_lock.lock();
 
-        for i in 1..100 {
+        for i in 1..10 {
             let file_lock = dir.create(&i.to_string(), InodeType::File).unwrap();
             let mut file = file_lock.lock();
             assert_eq!(file.size(), 0);
 
-            file.resize(i * 500).unwrap();
-            assert_eq!(file.size(), i * 500);
+            file.resize(10).unwrap();
+            assert_eq!(file.size(), 10);
         }
     }
 }

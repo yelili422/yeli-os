@@ -9,15 +9,23 @@ use crate::block_cache::BlockCacheBuffer;
 ///
 /// Blocks devices only support random read and write by block.
 pub trait BlockDevice: Send + Sync {
-    fn read(&self, block_id: u32, buf: &mut [u8]);
-    fn write(&self, block_id: u32, buf: &[u8]);
+    fn read(&self, block_id: u64, buf: &mut [u8]);
+    fn write(&self, block_id: u64, buf: &[u8]);
 }
 
 /// The size of one block.
-pub const BLOCK_SIZE: usize = 4096; // Bytes
+///
+/// The smallest addressable unit on a block device is a *sector*.
+/// Sectors come in various powers of two, but 512 bytes is the most
+/// common size. Therefore, the block size can be no smaller than
+/// the sector and must be a multiple of a sector. Furthermore,
+/// the kernel needs the block to be a power of two. The kernel
+/// also requires that a block be no larger than the page size.
+/// Common block sizes are 512 bytes, 1 kilobyte, and 4 kilobytes.
+pub const BLOCK_SIZE: usize = 1024; // Bytes
 
 /// File system magic number for sanity check.
-const FS_MAGIC: u32 = 0x102030;
+const FS_MAGIC: u64 = 0x102030;
 
 /// Inodes per block.
 pub const INODES_PER_BLOCK: usize = BLOCK_SIZE / DINODE_SIZE;
@@ -27,8 +35,9 @@ pub const BITMAP_PER_BLOCK: usize = BLOCK_SIZE * 8;
 
 /// Direct blocks per inode.
 ///
-/// We should keep `DInode` to take up the most of space in 1/n
-/// of `BLOCK_SIZE`. (i.e. `DINODE_SIZE == BLOCK_SIZE / 4`)
+/// We should keep every `DInode` to take up the most of space in
+/// 1/n of `BLOCK_SIZE` preferably.
+/// (i.e. DINODE_SIZE == BLOCK_SIZE / n, and now n = 4)
 pub const N_DIRECT: usize = 27;
 
 /// Indirect blocks per block.
@@ -55,13 +64,13 @@ pub const DINODE_SIZE: usize = size_of::<DInode>();
 /// a number n, to find the nth inode on the disk. In fact, this number n,
 /// called the inode number or i-number, is how inodes are identified in
 /// the implementation.
-pub type InodeId = u32;
+pub type InodeId = u64;
 
 /// The block ID.
-pub type BlockId = u32;
+pub type BlockId = u64;
 
 /// The block offset.
-pub type InBlockOffset = u32;
+pub type InBlockOffset = u64;
 
 /// Contains metadata about the file system.
 ///
@@ -72,13 +81,13 @@ pub type InBlockOffset = u32;
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct SuperBlock {
     /// Must be `FS_MAGIC`
-    magic:                u32,
+    magic:                u64,
     /// Size of file system image (blocks).
-    pub size:             u32,
+    pub size:             u64,
     /// Number of data blocks.
-    pub data_blocks_num:  u32,
+    pub data_blocks_num:  u64,
     /// Number of inodes.
-    pub inode_blocks_num: u32,
+    pub inode_blocks_num: u64,
     /// Block number of first free inode map block.
     pub inode_bmap_start: InodeId,
     /// Block number of first inode block.
@@ -92,9 +101,9 @@ pub struct SuperBlock {
 impl SuperBlock {
     pub fn initialize(
         &mut self,
-        size: u32,
-        data_blocks_num: u32,
-        inode_blocks_num: u32,
+        size: u64,
+        data_blocks_num: u64,
+        inode_blocks_num: u64,
         inode_bmap_start: InodeId,
         inode_start: InodeId,
         data_bmap_start: InodeId,
@@ -116,8 +125,8 @@ impl SuperBlock {
 
     /// Gets block id and offset-in-block by inode-num.
     pub fn inode_pos(&self, inum: InodeId) -> (BlockId, InBlockOffset) {
-        let block_id = inum / INODES_PER_BLOCK as u32 + self.inode_start;
-        let offset = (inum % INODES_PER_BLOCK as u32) * DINODE_SIZE as u32;
+        let block_id = inum / INODES_PER_BLOCK as u64 + self.inode_start;
+        let offset = (inum % INODES_PER_BLOCK as u64) * DINODE_SIZE as u64;
         (block_id, offset)
     }
 }
@@ -195,9 +204,9 @@ pub struct DInode {
     /// Minor device number.
     pub minor:     InodeId,
     /// Counts the number of directory entries that refer to this inode.
-    pub links_num: u32,
+    pub links_num: u64,
     /// Size of file (bytes).
-    pub size:      u32,
+    pub size:      u64,
     /// Data block addresses.
     pub addresses: [BlockId; N_DIRECT],
 }
@@ -207,8 +216,8 @@ impl DInode {
         type_: InodeType,
         major: InodeId,
         minor: InodeId,
-        links_num: u32,
-        size: u32,
+        links_num: u64,
+        size: u64,
         addresses: [BlockId; N_DIRECT],
     ) -> Self {
         Self {

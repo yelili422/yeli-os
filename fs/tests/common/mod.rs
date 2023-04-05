@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Once},
 };
 
-use fs::FileSystem;
+use fs::{block_dev::BLOCK_SIZE, FileSystem};
 use log::LevelFilter;
 use spin::Mutex;
 
@@ -28,9 +28,9 @@ pub fn setup() -> Arc<FileSystem> {
             .create(true)
             .open(FS_PATH)
             .unwrap();
-        file.set_len(4096 * 512).unwrap();
+        file.set_len(4096 * BLOCK_SIZE as u64).unwrap();
 
-        FileSystem::create(Arc::new(BlockFile(Mutex::new(file))), 4096, 10).unwrap();
+        FileSystem::create(Arc::new(BlockFile(Mutex::new(file))), 4096, 2500).unwrap();
     });
 
     FileSystem::open(Arc::new(BlockFile(Mutex::new(
