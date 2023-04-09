@@ -41,13 +41,13 @@ pub const BITMAP_PER_BLOCK: usize = BLOCK_SIZE * 8;
 pub const N_DIRECT: usize = 27;
 
 /// Indirect blocks per block.
-pub const N_INDIRECT: usize = BLOCK_SIZE / size_of::<u32>();
+pub const N_INDIRECT: usize = BLOCK_SIZE / size_of::<BlockId>();
 
 /// The maximum data blocks of one inode.
 pub const MAX_BLOCKS_ONE_INODE: usize = N_DIRECT + N_INDIRECT + N_INDIRECT * N_INDIRECT;
 
-/// The maximum inode size.
-pub const MAX_SIZE_ONE_INODE: usize = MAX_BLOCKS_ONE_INODE * BLOCK_SIZE;
+/// The maximum inode capacity.
+pub const MAX_CAPACITY_ONE_INODE: usize = MAX_BLOCKS_ONE_INODE * BLOCK_SIZE;
 
 /// The size of directory name.
 pub const DIR_NAME_SIZE: usize = 24;
@@ -60,10 +60,9 @@ pub const DINODE_SIZE: usize = size_of::<DInode>();
 
 /// The Inode ID.
 ///
-/// Every inode is the same size, so it is easy, given
-/// a number n, to find the nth inode on the disk. In fact, this number n,
-/// called the inode number or i-number, is how inodes are identified in
-/// the implementation.
+/// Every inode is the same size, so it is easy, given a number n, to find
+/// the nth inode on the disk. In fact, this number n, called the inode
+/// number or i-number, is how inodes are identified in the implementation.
 pub type InodeId = u64;
 
 /// The block ID.
@@ -278,7 +277,7 @@ impl DInode {
     }
 
     /// Sets block id to given inner index.
-    pub fn set_block_id(
+    pub fn map_block(
         &mut self,
         idx: usize,
         block_id: BlockId,

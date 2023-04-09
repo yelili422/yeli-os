@@ -11,7 +11,7 @@ use spin::Mutex;
 use crate::{
     block_dev::{
         BlockId, DInode, DirEntry, InBlockOffset, InodeId, InodeType, BLOCK_SIZE, DIR_ENTRY_SIZE,
-        MAX_SIZE_ONE_INODE, N_DIRECT,
+        MAX_CAPACITY_ONE_INODE, N_DIRECT,
     },
     FileSystem, FileSystemAllocationError,
 };
@@ -283,11 +283,18 @@ impl Inode {
     }
 
     pub fn resize(&mut self, new_size: usize) -> Result<(), FileSystemAllocationError> {
-        if new_size > MAX_SIZE_ONE_INODE {
+        if new_size > MAX_CAPACITY_ONE_INODE {
             return Err(FileSystemAllocationError::TooLarge(new_size));
         }
 
         let old_size = self.size();
+        debug!(
+            "inode: resize inode {} from {} Bytes to {} Bytes ({:.6} MBytes)",
+            self.inode_num,
+            old_size,
+            new_size,
+            (new_size as f64) / 1024. / 1024.
+        );
         if new_size > old_size {
             let in_block_offset = old_size % BLOCK_SIZE;
             let mut increment = new_size - old_size;
@@ -304,6 +311,7 @@ impl Inode {
 
             let base_idx = (old_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
             let needed_blocks = (increment + BLOCK_SIZE - 1) / BLOCK_SIZE;
+            debug!("inode: allocate new blocks, needs {}", needed_blocks);
 
             let fs = self.fs.upgrade().unwrap();
             for i in 0..needed_blocks {
@@ -314,7 +322,7 @@ impl Inode {
                 clear_block(block_id, fs.clone());
 
                 self.update_dinode(|dinode| {
-                    dinode.set_block_id(
+                    dinode.map_block(
                         base_idx + i,
                         block_id,
                         fs.dev.clone(),
@@ -330,6 +338,10 @@ impl Inode {
         } else {
             Ok(()) // invariant size
         }
+    }
+
+    pub fn type_(&self) -> InodeType {
+        self.type_
     }
 }
 

@@ -28,9 +28,14 @@ pub fn setup() -> Arc<FileSystem> {
             .create(true)
             .open(FS_PATH)
             .unwrap();
-        file.set_len(4096 * BLOCK_SIZE as u64).unwrap();
+        file.set_len(100 * 1024 * BLOCK_SIZE as u64).unwrap();
 
-        FileSystem::create(Arc::new(BlockFile(Mutex::new(file))), 4096, 2500).unwrap();
+        FileSystem::create(
+            Arc::new(BlockFile(Mutex::new(file))),
+            100 * 1024,
+            FileSystem::calc_inodes_num(100 * 1024, 0.1),
+        )
+        .unwrap();
     });
 
     FileSystem::open(Arc::new(BlockFile(Mutex::new(

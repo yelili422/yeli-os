@@ -6,15 +6,15 @@ extern crate alloc;
 use alloc::{string::String, sync::Arc};
 use block_cache::BlockCacheBuffer;
 use block_dev::{
-    BitmapBlock, BlockDevice, BlockId, DInode, InodeId, InodeType, SuperBlock, BLOCK_SIZE,
-    DINODE_SIZE, INODES_PER_BLOCK,
+    BitmapBlock, BlockDevice, BlockId, InodeId, InodeType, SuperBlock, BLOCK_SIZE, DINODE_SIZE,
+    INODES_PER_BLOCK,
 };
 use core::mem::size_of;
 use inode::{Inode, InodeCacheBuffer, InodeNotExists};
 use log::{debug, info, warn};
 use spin::Mutex;
 
-use crate::block_dev::{MAX_BLOCKS_ONE_INODE, MAX_SIZE_ONE_INODE};
+use crate::block_dev::{MAX_BLOCKS_ONE_INODE, MAX_CAPACITY_ONE_INODE};
 
 pub mod block_cache;
 pub mod block_dev;
@@ -38,24 +38,28 @@ pub struct FileSystem {
 }
 
 impl FileSystem {
+    pub fn calc_inodes_num(total_blocks: u64, factor: f64) -> u64 {
+        (total_blocks as f64 * factor) as u64
+    }
+
     pub fn create(
         dev: Arc<dyn BlockDevice>,
         total_blocks: u64,
         inode_blocks: u64,
     ) -> Result<Arc<Self>, FileSystemCreateError> {
-        info!("fs: block size: {} bytes", BLOCK_SIZE);
-        info!("fs: inode size: {} bytes", DINODE_SIZE);
+        info!("fs: block size: {} Bytes", BLOCK_SIZE);
+        info!("fs: inode size: {} Bytes", DINODE_SIZE);
         assert_eq!(
             DINODE_SIZE,
             BLOCK_SIZE / INODES_PER_BLOCK,
             "The size of the inode needs to be adapted to the `block_size`"
         );
 
-        info!("fs: max blocks of one inode: {}", MAX_BLOCKS_ONE_INODE);
-        info!(
-            "fs: max data size of one inode: {} Bytes({} MB)",
-            MAX_SIZE_ONE_INODE,
-            MAX_SIZE_ONE_INODE / 1024
+        debug!("fs: max blocks of one inode: {}", MAX_BLOCKS_ONE_INODE);
+        debug!(
+            "fs: max data size of one inode: {} Bytes({} MBytes)",
+            MAX_CAPACITY_ONE_INODE,
+            MAX_CAPACITY_ONE_INODE / 1024 / 1024
         );
 
         let super_blocks = 1;
@@ -188,17 +192,19 @@ impl FileSystem {
 
     /// Allocates a free space in data area.
     pub fn allocate_block(self: &Arc<Self>) -> Option<BlockId> {
-        if let Some(block_offset) = self
-            .block_cache
-            .lock()
-            .get(self.sb.data_bmap_start, self.dev.clone())
-            .lock()
-            .write(0, |data_bmap: &mut BitmapBlock| data_bmap.allocate())
-        {
-            Some(self.sb.data_start + block_offset as BlockId)
-        } else {
-            None
+        for block_id in self.sb.data_bmap_start..self.sb.data_start {
+            if let Some(block_offset) = self
+                .block_cache
+                .lock()
+                .get(block_id, self.dev.clone())
+                .lock()
+                .write(0, |data_bmap: &mut BitmapBlock| data_bmap.allocate())
+            {
+                return Some(block_id + block_offset as BlockId);
+            }
         }
+        warn!("bitmap: can't find an available bit.");
+        None
     }
 
     /// Gets the root inode.
