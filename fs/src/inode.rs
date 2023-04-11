@@ -203,6 +203,9 @@ impl Inode {
         let fs = self.fs.upgrade().unwrap();
 
         let dirent = &mut DirEntry::empty();
+
+        // TODO: Looking up a file by name will be slow when files_num
+        // more and more bigger.
         for i in 0..files_num {
             let read_size = self.read_data(DIR_ENTRY_SIZE * i, unsafe {
                 from_raw_parts_mut(dirent as *mut _ as *mut u8, DIR_ENTRY_SIZE)
@@ -227,8 +230,11 @@ impl Inode {
         name: &str,
         type_: InodeType,
     ) -> Result<Arc<Mutex<Inode>>, FileSystemAllocationError> {
-        // FIXME:
-        assert_eq!(self.type_, InodeType::Directory);
+        assert_eq!(
+            self.type_,
+            InodeType::Directory,
+            "New files only can be created in directories."
+        );
 
         match self.look_up(name) {
             Some(quality_lock) => {
@@ -241,27 +247,27 @@ impl Inode {
         }
 
         let fs = self.fs.upgrade().unwrap();
-        let inode_lock = fs
+        let new_inode_lock = fs
             .allocate_inode(type_)
             .ok_or_else(|| FileSystemAllocationError::InodeExhausted)?;
 
-        let offset = self.size();
-        self.resize(offset + DIR_ENTRY_SIZE)?;
-        assert_eq!(self.size(), offset + DIR_ENTRY_SIZE);
+        let base_offset = self.size();
+        self.resize(base_offset + DIR_ENTRY_SIZE)?;
+        assert_eq!(self.size(), base_offset + DIR_ENTRY_SIZE);
 
+        let mut new_inode = new_inode_lock.lock();
         {
-            let mut inode = inode_lock.lock();
+            let dirent = &DirEntry::new(name, new_inode.inode_num);
 
-            let written = self.write_data(offset, unsafe {
-                let dirent = &DirEntry::new(name, inode.inode_num);
+            let written = self.write_data(base_offset, unsafe {
                 from_raw_parts(dirent as *const _ as *const u8, DIR_ENTRY_SIZE)
             });
             assert_eq!(written, DIR_ENTRY_SIZE);
 
-            inode.update_dinode(|dinode| dinode.links_num += 1);
+            new_inode.update_dinode(|dinode| dinode.links_num += 1);
         }
 
-        Ok(inode_lock)
+        Ok(new_inode_lock.clone())
     }
 
     /// Reads data from this inode to buffer.

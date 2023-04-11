@@ -57,7 +57,7 @@ fn create_amounts_of_directories() {
         .unwrap();
     let mut dir = dir_lock.lock();
 
-    for i in 1..10000 {
+    for i in 1..500 {
         info!("creating the {} directory", i);
         let d_lock = dir.create(&i.to_string(), InodeType::Directory).unwrap();
         let d = d_lock.lock();

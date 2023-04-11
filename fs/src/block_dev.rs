@@ -1,6 +1,7 @@
 use core::mem::size_of;
 
 use alloc::sync::Arc;
+use log::debug;
 use spin::Mutex;
 
 use crate::block_cache::BlockCacheBuffer;
@@ -361,31 +362,29 @@ impl DInode {
         block_dev: Arc<dyn BlockDevice>,
         cache: Arc<Mutex<BlockCacheBuffer>>,
     ) -> usize {
-        let mut start = offset;
+        let mut start_addr = offset;
         // Ensure the end address does not exceed the safe range.
-        let end = start + buf.len().min(self.size as usize - offset);
+        let end_addr = start_addr + buf.len().min(self.size as usize - offset);
 
-        let mut start_block = start / BLOCK_SIZE;
+        let mut start_block = start_addr / BLOCK_SIZE;
         let mut completed = 0usize;
-        while start < end {
+        while start_addr < end_addr {
             // Growth value is the minimum of the end address or the block boundary.
-            let incr = end.min((start_block + 1) * BLOCK_SIZE) - start;
+            let incr = end_addr.min((start_block + 1) * BLOCK_SIZE) - start_addr;
+            let block_id = self.block_id(start_block, block_dev.clone(), cache.clone());
 
-            cache
-                .lock()
-                .get(
-                    self.block_id(start_block, block_dev.clone(), cache.clone()),
-                    block_dev.clone(),
-                )
-                .lock()
-                .write(0, |data_block: &mut DataBlock| {
+            cache.lock().get(block_id, block_dev.clone()).lock().write(
+                0,
+                |data_block: &mut DataBlock| {
                     let src = &buf[completed..completed + incr];
-                    let dst = &mut data_block[start % BLOCK_SIZE..start % BLOCK_SIZE + incr];
+                    let dst =
+                        &mut data_block[start_addr % BLOCK_SIZE..start_addr % BLOCK_SIZE + incr];
                     dst.copy_from_slice(src);
-                });
+                },
+            );
 
             completed += incr;
-            start += incr;
+            start_addr += incr;
             start_block += 1;
         }
 
