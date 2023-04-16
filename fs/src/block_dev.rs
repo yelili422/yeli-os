@@ -83,40 +83,41 @@ pub struct SuperBlock {
     /// Must be `FS_MAGIC`
     magic:                u64,
     /// Size of file system image (blocks).
-    pub size:             u64,
-    /// Number of data blocks.
-    pub data_blocks_num:  u64,
-    /// Number of inodes.
-    pub inode_blocks_num: u64,
+    pub blocks:           u64,
     /// Block number of first free inode map block.
     pub inode_bmap_start: InodeId,
     /// Block number of first inode block.
     pub inode_start:      InodeId,
+    /// Number of inodes.
+    pub inode_blocks:     u64,
     /// Block number of first free data map block.
     pub data_bmap_start:  InodeId,
     /// Block number of first data block.
     pub data_start:       InodeId,
+    /// Number of data blocks.
+    pub data_blocks:      u64,
 }
 
 impl SuperBlock {
-    pub fn initialize(
-        &mut self,
-        size: u64,
-        data_blocks_num: u64,
-        inode_blocks_num: u64,
+    pub fn new(
+        blocks: u64,
         inode_bmap_start: InodeId,
         inode_start: InodeId,
+        inode_blocks: u64,
         data_bmap_start: InodeId,
         data_start: InodeId,
-    ) {
-        self.magic = FS_MAGIC;
-        self.size = size;
-        self.data_blocks_num = data_blocks_num;
-        self.inode_blocks_num = inode_blocks_num;
-        self.inode_start = inode_start;
-        self.data_bmap_start = data_bmap_start;
-        self.data_start = data_start;
-        self.inode_bmap_start = inode_bmap_start;
+        data_blocks: u64,
+    ) -> SuperBlock {
+        Self {
+            magic: FS_MAGIC,
+            blocks,
+            inode_bmap_start,
+            inode_start,
+            inode_blocks,
+            data_bmap_start,
+            data_start,
+            data_blocks,
+        }
     }
 
     pub fn is_valid(&self) -> bool {
@@ -246,7 +247,7 @@ impl DInode {
     }
 
     /// Gets block id by inner index.
-    pub fn block_id(
+    pub fn get_bid(
         &self,
         idx: usize,
         block_dev: Arc<dyn BlockDevice>,
@@ -264,11 +265,16 @@ impl DInode {
                 .read(0, |index_block: &IndexBlock| index_block[idx - N_DIRECT])
         } else {
             let p = idx - (N_DIRECT + N_INDIRECT);
+            debug!("p={}", p);
+            debug!("minor_id={}", p / N_INDIRECT);
+            debug!("major_id={}", p % N_INDIRECT);
+
             let major_block_id = cache
                 .lock()
                 .get(self.minor, block_dev.clone())
                 .lock()
                 .read(0, |minor_block: &IndexBlock| minor_block[p / N_INDIRECT]);
+            debug!("{}", major_block_id);
             cache
                 .lock()
                 .get(major_block_id, block_dev.clone())
@@ -278,7 +284,7 @@ impl DInode {
     }
 
     /// Sets block id to given inner index.
-    pub fn map_block(
+    pub fn set_bid(
         &mut self,
         idx: usize,
         block_id: BlockId,
@@ -286,6 +292,7 @@ impl DInode {
         cache: Arc<Mutex<BlockCacheBuffer>>,
     ) {
         assert!(idx < MAX_BLOCKS_ONE_INODE);
+        debug!("dinode: map idx: {} to block id: {}", idx, block_id);
 
         if idx < N_DIRECT {
             self.addresses[idx] = block_id;
@@ -333,10 +340,7 @@ impl DInode {
 
             cache
                 .lock()
-                .get(
-                    self.block_id(start_block, block_dev.clone(), cache.clone()),
-                    block_dev.clone(),
-                )
+                .get(self.get_bid(start_block, block_dev.clone(), cache.clone()), block_dev.clone())
                 .lock()
                 .read(0, |data_block: &DataBlock| {
                     // Copy data from this block.
@@ -371,7 +375,8 @@ impl DInode {
         while start_addr < end_addr {
             // Growth value is the minimum of the end address or the block boundary.
             let incr = end_addr.min((start_block + 1) * BLOCK_SIZE) - start_addr;
-            let block_id = self.block_id(start_block, block_dev.clone(), cache.clone());
+            let block_id = self.get_bid(start_block, block_dev.clone(), cache.clone());
+            debug!("======> {} {}", start_block, block_id);
 
             cache.lock().get(block_id, block_dev.clone()).lock().write(
                 0,
@@ -414,9 +419,9 @@ mod tests {
             unsafe { *sb },
             SuperBlock {
                 magic:            0,
-                size:             0,
-                data_blocks_num:  0,
-                inode_blocks_num: 0,
+                blocks:           0,
+                data_blocks:      0,
+                inode_blocks:     0,
                 inode_bmap_start: 0,
                 inode_start:      0,
                 data_bmap_start:  0,

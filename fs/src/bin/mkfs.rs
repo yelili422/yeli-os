@@ -84,7 +84,7 @@ fn main() {
         let mut file = file_lock.lock();
         file.resize(source_len as usize).unwrap();
 
-        let mut buffer = [0u8; 4096];
+        let mut buffer = [0u8; BLOCK_SIZE];
         let mut read_count = 0;
         loop {
             let offset = source_file.read(&mut buffer).unwrap();

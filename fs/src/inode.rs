@@ -236,14 +236,8 @@ impl Inode {
             "New files only can be created in directories."
         );
 
-        match self.look_up(name) {
-            Some(quality_lock) => {
-                let quality = quality_lock.lock();
-                if quality.type_ == type_ {
-                    return Err(FileSystemAllocationError::AlreadyExist(name.to_string(), type_));
-                }
-            }
-            _ => {}
+        if let Some(_) = self.look_up(name) {
+            return Err(FileSystemAllocationError::AlreadyExist(name.to_string(), type_));
         }
 
         let fs = self.fs.upgrade().unwrap();
@@ -324,16 +318,11 @@ impl Inode {
                 let block_id = fs
                     .allocate_block()
                     .ok_or_else(|| FileSystemAllocationError::Exhausted(new_size))?;
-
+                debug!("inode: resize: allocated block_id: {}", block_id);
                 clear_block(block_id, fs.clone());
 
                 self.update_dinode(|dinode| {
-                    dinode.map_block(
-                        base_idx + i,
-                        block_id,
-                        fs.dev.clone(),
-                        fs.block_cache.clone(),
-                    );
+                    dinode.set_bid(base_idx + i, block_id, fs.dev.clone(), fs.block_cache.clone());
                 })
             }
 
