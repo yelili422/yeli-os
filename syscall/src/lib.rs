@@ -1,3 +1,5 @@
+#![no_std]
+
 mod sbi;
 
 use core::arch::asm;

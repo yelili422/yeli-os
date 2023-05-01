@@ -4,7 +4,8 @@
 #![test_runner(yeli_os::test_runner)]
 
 use log::info;
-use yeli_os::{init, syscall::shutdown};
+use syscall::shutdown;
+use yeli_os::init;
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {

@@ -1,10 +1,6 @@
 use core::arch::asm;
 
-use log::info;
-
-use crate::println;
-
-use super::TASK_MANAGER;
+// use super::tasks;
 
 #[inline(always)]
 fn r_fp() -> usize {
@@ -19,14 +15,12 @@ fn r_fp() -> usize {
     x
 }
 
-pub fn backtrace() {
-    // let fp = r_fp();
-    {
-        let tm = TASK_MANAGER.read();
-        {
-            let proc_lock = tm.current().expect("get current process failed.").read();
+// pub fn backtrace() {
+//     // let fp = r_fp();
+//     {
+//         let tasks = tasks();
+//         let current = tasks.current().expect("get current process failed.").read();
 
-            // println!("{:?}", &proc_lock.stack);
-        }
-    }
-}
+//         // println!("{:?}", &current.stack);
+//     }
+// }

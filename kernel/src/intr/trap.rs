@@ -4,7 +4,7 @@ use crate::{
     intr::{trampoline, userret, uservec},
     mem::{page::current_page_table, TRAMPOLINE, TRAPFRAME},
     println,
-    proc::TASK_MANAGER,
+    proc::TASKS,
 };
 
 use super::handle;
@@ -60,7 +60,7 @@ pub fn usertrap() {
     // stvec::write(kernelvec)
 
     {
-        let lock = TASK_MANAGER.write();
+        let lock = TASKS.write();
         let proc = lock
             .current()
             .expect("usertrap: failed to get current process");
@@ -80,7 +80,7 @@ pub fn usertrapret() {
     let satp: usize;
 
     {
-        let lock = TASK_MANAGER.write();
+        let lock = TASKS.write();
         println!(2);
 
         // We're about to switch the destination of traps from `kerneltrap()`
@@ -98,9 +98,10 @@ pub fn usertrapret() {
 
             // Set up trapframe values that `uservec` will need when the
             // process next re-enters the kernel.
+            let stack = proc.kernel_stack.as_ref().unwrap();
             proc.trap_frame = TrapFrame {
                 kernel_satp: current_page_table(), // i.e. kernel page table.
-                kernel_sp: proc.stack.as_ptr() as usize + proc.stack.len(), // kernel stack
+                kernel_sp: stack.as_ptr() as usize + stack.len(), // kernel stack
                 kernel_trap: usertrap as usize,
                 ..Default::default()
             };
@@ -116,9 +117,10 @@ pub fn usertrapret() {
             // Set S Exception Program Counter to the saved user pc.
             sepc::write(proc.trap_frame.epc);
 
-            satp = proc.page_table.make_satp();
+            satp = proc.page_table.unwrap().make_satp();
         }
     }
+    println!(4);
 
     // Jump to trampoline.S, which switches to the user page table,
     // restores user registers, and switches to user mode with `sret`.
@@ -128,7 +130,7 @@ pub fn usertrapret() {
 #[no_mangle]
 pub fn kerneltrap() {
     {
-        let lock = TASK_MANAGER.write();
+        let lock = TASKS.write();
         let proc = lock
             .current()
             .expect("usertrap: failed to get current process");

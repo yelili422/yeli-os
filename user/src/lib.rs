@@ -4,8 +4,9 @@
 
 use core::panic::PanicInfo;
 
+extern crate syscall;
+
 pub mod console;
-pub mod syscall;
 
 #[no_mangle]
 #[link_section = ".text.entry"]

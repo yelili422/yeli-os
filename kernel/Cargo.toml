@@ -8,6 +8,8 @@ edition = "2021"
 # https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+syscall = { version = "0.1.0", path = "../syscall" }
+
 riscv = { version = "0.8.0" }
 
 # This crate provides a Volatile wrapper type with read and write methods.

@@ -13,13 +13,13 @@ extern crate alloc;
 
 use core::{arch::global_asm, panic::PanicInfo};
 use log::{info, LevelFilter};
+use syscall;
 
 pub mod console;
 pub mod intr;
 pub mod logger;
 pub mod mem;
 pub mod proc;
-pub mod syscall;
 
 // The entry point for this OS
 global_asm!(include_str!("boot/entry.S"));
@@ -32,9 +32,7 @@ pub fn init() {
     proc::init();
     intr::init();
 
-    loop {}
-
-    // proc::schedule();
+    proc::schedule();
 }
 
 #[cfg(test)]

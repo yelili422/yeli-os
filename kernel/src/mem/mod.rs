@@ -1,4 +1,4 @@
-use crate::{addr, mem::allocator::alloc_one_page, proc::ContextId};
+use crate::{addr, mem::allocator::alloc_one_page, proc::TaskId};
 
 use self::{
     address::{as_mut, Address, VirtualAddress, MAX_VA},
@@ -27,7 +27,7 @@ pub const TRAMPOLINE: Address = MAX_VA - PAGE_SIZE + 1;
 pub const TRAPFRAME: Address = TRAMPOLINE - PAGE_SIZE;
 
 /// The kernel stack address of this process.
-pub const fn kernel_stack(pid: ContextId) -> VirtualAddress {
+pub const fn kernel_stack(pid: TaskId) -> VirtualAddress {
     TRAMPOLINE - (pid as usize + 1) * 2 * PAGE_SIZE
 }
 
