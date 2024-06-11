@@ -14,8 +14,8 @@ use core::{arch::global_asm, panic};
 
 use riscv::register::{
     scause::{self, Interrupt, Trap},
-    sie, sstatus, stvec,
-    utvec::TrapMode,
+    sie, sstatus,
+    stvec::{self, TrapMode},
 };
 
 use self::timer::{set_next_timer, tick};
