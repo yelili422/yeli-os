@@ -32,8 +32,8 @@ impl FreeBlock {
 }
 
 pub struct BuddyAllocator<const ORDER: usize> {
-    base:           *mut u8,
-    size:           usize,
+    _base:          *mut u8,
+    _size:          usize,
     free_list:      [*mut FreeBlock; ORDER],
     min_block_size: usize,
 }
@@ -71,8 +71,8 @@ impl<const ORDER: usize> BuddyAllocator<ORDER> {
         free_list[ORDER - 1] = heap_base.as_ptr() as *mut FreeBlock;
 
         Self {
-            base: heap_base.as_ptr(),
-            size: heap_size,
+            _base: heap_base.as_ptr(),
+            _size: heap_size,
             free_list,
             min_block_size,
         }
@@ -133,7 +133,7 @@ impl<const ORDER: usize> BuddyAllocator<ORDER> {
     }
 
     pub fn free(&mut self, _ptr: NonNull<u8>, _layout: Layout) {
-        // unimplemented!();
+        unimplemented!();
     }
 }
 

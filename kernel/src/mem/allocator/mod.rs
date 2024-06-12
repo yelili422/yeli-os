@@ -39,7 +39,7 @@ impl<const ORDER: usize> LockedAllocator<ORDER> {
     }
 
     pub unsafe fn init(&mut self, pa_start: PhysicalAddress, pa_end: PhysicalAddress) {
-        debug!("locked_allocator: init from 0x{:x} to 0x{:x}", pa_start, pa_end);
+        debug!("allocator: init from 0x{:x} to 0x{:x}", pa_start, pa_end);
         let mut allocator = self.lock();
         {
             *allocator = Some(BuddyAllocator::<ORDER>::new(
@@ -52,11 +52,14 @@ impl<const ORDER: usize> LockedAllocator<ORDER> {
 
 unsafe impl<const ORDER: usize> GlobalAlloc for LockedAllocator<ORDER> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        debug!("allocator: allocate {:?}", layout);
+        debug!("allocator: allocate request: {:?}", layout);
 
         match *self.lock() {
             Some(ref mut allocator) => match allocator.allocate(layout) {
-                Ok(pa) => as_mut(pa2va!(pa as usize)),
+                Ok(pa) => {
+                    debug!("allocator: allocate result: start address: 0x{:x}", pa as usize);
+                    as_mut(pa2va!(pa as usize))
+                },
                 Err(_) => {
                     error!("allocate finished, but return a null pointer.");
                     null_mut()

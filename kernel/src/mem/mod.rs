@@ -1,3 +1,5 @@
+use log::debug;
+
 use crate::{addr, mem::allocator::alloc_one_page, proc::TaskId};
 
 use self::{
@@ -50,13 +52,17 @@ extern "C" {
 
 /// Make a direct map page table for the kernel.
 unsafe fn kvm_make() -> &'static mut PageTable {
+    debug!("page_table: initializing kernel page table...");
+
     let pa = alloc_one_page().expect("kvm_make: allocate page failed.");
     let pt = as_mut::<PageTable>(pa);
 
     // map kernel text executable and read-only.
+    debug!("page_table: mapping kernel text section...");
     pt.map(KERNEL_BASE, KERNEL_BASE, addr!(etext) - KERNEL_BASE, PTEFlags::R | PTEFlags::X);
 
     // map kernel data and the physical RAM we'll make use of.
+    debug!("page_table: mapping kernel data section...");
     pt.map(addr!(etext), addr!(etext), MEM_END - addr!(etext), PTEFlags::R | PTEFlags::W);
 
     // Map the trampoline for trap entry/exit to the hightest virtual

@@ -1,12 +1,5 @@
 YeLi-OS
 
-# Prerequisites
-
-- Rust (nightly version)
-- Cargo
-- make
-- QEMU
-
 # Quick Start
 
 1. Switch to nightly version of rust.
@@ -18,13 +11,18 @@ YeLi-OS
 2. Install some compiler components
 
     ```shell
+    cargo install cargo-binutils
     rustup component add rust-src llvm-tools-preview
     ```
 
-3. Run
+3. Install QEMU
+
+    ```shell
+    brew install qemu
+    ```
+
+4. Run
 
     ```shell
     cd kernel && make run
     ```
-
-    // TODO: build fs

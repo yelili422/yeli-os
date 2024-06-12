@@ -16,12 +16,6 @@ SECTIONS
         *(.text .text.*)
 
         . = ALIGN(4096);
-        _trampoline = .;
-        *(trampoline)
-
-        . = ALIGN(4096);
-        /* ASSERT( . - _trampoline == 4096, "trampoline larger then one page.") */
-        ASSERT( . - _trampoline <= 4096, "trampoline larger then one page.")
         PROVIDE(etext = .);
     }
 

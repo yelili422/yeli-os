@@ -26,13 +26,13 @@ global_asm!(include_str!("boot/entry.S"));
 
 pub fn init() {
     logger::init(LevelFilter::Debug).expect("logger init failed.");
-    info!("Initializing the system...🤨");
+    info!("Initializing the system...");
 
     unsafe { mem::init() };
     proc::init();
     intr::init();
 
-    proc::schedule();
+    // proc::schedule();
 }
 
 #[cfg(test)]
