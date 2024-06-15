@@ -23,32 +23,32 @@ pub trait BlockDevice: Send + Sync {
 /// the kernel needs the block to be a power of two. The kernel
 /// also requires that a block be no larger than the page size.
 /// Common block sizes are 512 bytes, 1 kilobyte, and 4 kilobytes.
-pub const BLOCK_SIZE: usize = 1024; // Bytes
+pub const BLOCK_SIZE: usize = 4096; // Bytes
 
 /// File system magic number for sanity check.
 const FS_MAGIC: u64 = 0x102030;
 
-/// Inodes per block.
+/// Inode number in one block.
 pub const INODES_PER_BLOCK: usize = BLOCK_SIZE / DINODE_SIZE;
 
-/// Bitmap bits per block.
+/// Bitmap number in one block.
 pub const BITMAP_PER_BLOCK: usize = BLOCK_SIZE * 8;
 
 /// Direct blocks per inode.
 ///
 /// We should keep every `DInode` to take up the most of space in
 /// 1/n of `BLOCK_SIZE` preferably.
-/// (i.e. DINODE_SIZE == BLOCK_SIZE / n, and now n = 4)
-pub const N_DIRECT: usize = 27;
+/// (i.e. DINODE_SIZE == BLOCK_SIZE / n)
+pub const N_DIRECT: usize = 28;
 
 /// Indirect blocks per block.
 pub const N_INDIRECT: usize = BLOCK_SIZE / size_of::<BlockId>();
 
 /// The maximum data blocks of one inode.
-pub const MAX_BLOCKS_ONE_INODE: usize = N_DIRECT + N_INDIRECT + N_INDIRECT * N_INDIRECT;
+pub const MAX_BLOCKS_PER_INODE: usize = N_DIRECT + N_INDIRECT;
 
 /// The maximum inode capacity.
-pub const MAX_CAPACITY_ONE_INODE: usize = MAX_BLOCKS_ONE_INODE * BLOCK_SIZE;
+pub const CAPACITY_PER_INODE: usize = MAX_BLOCKS_PER_INODE * BLOCK_SIZE;
 
 /// The size of directory name.
 pub const DIR_NAME_SIZE: usize = 24;
@@ -58,6 +58,9 @@ pub const DIR_ENTRY_SIZE: usize = size_of::<DirEntry>();
 
 /// The size of DInode.
 pub const DINODE_SIZE: usize = size_of::<DInode>();
+
+/// The maximum directories per inode.
+pub const MAX_DIRENTS_PER_INODE: usize = CAPACITY_PER_INODE / DIR_ENTRY_SIZE;
 
 /// The Inode ID.
 ///
@@ -125,7 +128,7 @@ impl SuperBlock {
     }
 
     /// Gets block id and offset-in-block by inode-num.
-    pub fn inode_pos(&self, inum: InodeId) -> (BlockId, InBlockOffset) {
+    pub fn find_inode(&self, inum: InodeId) -> (BlockId, InBlockOffset) {
         let block_id = inum / INODES_PER_BLOCK as u64 + self.inode_start;
         let offset = (inum % INODES_PER_BLOCK as u64) * DINODE_SIZE as u64;
         (block_id, offset)
@@ -195,15 +198,16 @@ impl DirEntry {
 ///
 /// The on-disk inodes are packed into a contiguous area of disk called
 /// the inode blocks.
+/// It records the data block addresses of the file. The first N_DIRECT
+/// blocks will be stored in `addresses`, and the rest will be stored in
+/// the indirect blocks pointed by `indirect`.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct DInode {
     /// File type.
     pub type_:     InodeType,
-    /// Major device number.
-    pub major:     InodeId,
-    /// Minor device number.
-    pub minor:     InodeId,
+    /// Indirect block number.
+    pub indirect:  InodeId,
     /// Counts the number of directory entries that refer to this inode.
     pub links_num: u64,
     /// Size of file (bytes).
@@ -215,16 +219,14 @@ pub struct DInode {
 impl DInode {
     pub fn new(
         type_: InodeType,
-        major: InodeId,
-        minor: InodeId,
+        indirect: InodeId,
         links_num: u64,
         size: u64,
         addresses: [BlockId; N_DIRECT],
     ) -> Self {
         Self {
             type_,
-            major,
-            minor,
+            indirect,
             links_num,
             size,
             addresses,
@@ -234,8 +236,7 @@ impl DInode {
     pub fn initialize(&mut self, type_: InodeType) {
         *self = Self {
             type_,
-            major: 0,
-            minor: 0,
+            indirect: 0,
             links_num: 0,
             size: 0,
             addresses: [0; N_DIRECT],
@@ -253,33 +254,18 @@ impl DInode {
         block_dev: Arc<dyn BlockDevice>,
         cache: Arc<Mutex<BlockCacheBuffer>>,
     ) -> BlockId {
-        assert!(idx < MAX_BLOCKS_ONE_INODE);
+        assert!(idx < MAX_BLOCKS_PER_INODE);
 
         if idx < N_DIRECT {
             self.addresses[idx]
         } else if idx < N_DIRECT + N_INDIRECT {
             cache
                 .lock()
-                .get(self.major, block_dev.clone())
+                .get(self.indirect, block_dev.clone())
                 .lock()
                 .read(0, |index_block: &IndexBlock| index_block[idx - N_DIRECT])
         } else {
-            let p = idx - (N_DIRECT + N_INDIRECT);
-            debug!("p={}", p);
-            debug!("minor_id={}", p / N_INDIRECT);
-            debug!("major_id={}", p % N_INDIRECT);
-
-            let major_block_id = cache
-                .lock()
-                .get(self.minor, block_dev.clone())
-                .lock()
-                .read(0, |minor_block: &IndexBlock| minor_block[p / N_INDIRECT]);
-            debug!("{}", major_block_id);
-            cache
-                .lock()
-                .get(major_block_id, block_dev.clone())
-                .lock()
-                .read(0, |major_block: &IndexBlock| major_block[p % N_INDIRECT])
+            panic!("the block index is out of range: {}", idx)
         }
     }
 
@@ -291,7 +277,7 @@ impl DInode {
         block_dev: Arc<dyn BlockDevice>,
         cache: Arc<Mutex<BlockCacheBuffer>>,
     ) {
-        assert!(idx < MAX_BLOCKS_ONE_INODE);
+        assert!(idx < MAX_BLOCKS_PER_INODE);
         debug!("dinode: map idx: {} to block id: {}", idx, block_id);
 
         if idx < N_DIRECT {
@@ -299,21 +285,11 @@ impl DInode {
         } else if idx < N_DIRECT + N_INDIRECT {
             cache
                 .lock()
-                .get(self.major, block_dev.clone())
+                .get(self.indirect, block_dev.clone())
                 .lock()
                 .write(0, |index_block: &mut IndexBlock| index_block[idx - N_DIRECT] = block_id)
         } else {
-            let p = idx - (N_DIRECT + N_INDIRECT);
-            let major_block_id = cache
-                .lock()
-                .get(self.minor, block_dev.clone())
-                .lock()
-                .read(0, |minor_block: &IndexBlock| minor_block[p / N_INDIRECT]);
-            cache
-                .lock()
-                .get(major_block_id, block_dev.clone())
-                .lock()
-                .write(0, |major_block: &mut IndexBlock| major_block[p % N_INDIRECT] = block_id)
+            panic!("the block index is out of range: {}", idx)
         }
     }
 
@@ -376,7 +352,6 @@ impl DInode {
             // Growth value is the minimum of the end address or the block boundary.
             let incr = end_addr.min((start_block + 1) * BLOCK_SIZE) - start_addr;
             let block_id = self.get_bid(start_block, block_dev.clone(), cache.clone());
-            debug!("======> {} {}", start_block, block_id);
 
             cache.lock().get(block_id, block_dev.clone()).lock().write(
                 0,

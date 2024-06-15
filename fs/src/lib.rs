@@ -1,5 +1,5 @@
 #![no_std]
-#![feature(drain_filter)]
+#![feature(generic_nonzero)]
 
 extern crate alloc;
 
@@ -14,7 +14,7 @@ use inode::{Inode, InodeCacheBuffer, InodeNotExists};
 use log::{debug, warn};
 use spin::Mutex;
 
-use crate::block_dev::{MAX_BLOCKS_ONE_INODE, MAX_CAPACITY_ONE_INODE};
+use crate::block_dev::{MAX_BLOCKS_PER_INODE, CAPACITY_PER_INODE};
 
 pub mod block_cache;
 pub mod block_dev;
@@ -58,11 +58,11 @@ impl FileSystem {
             "The size of the inode needs to be adapted to the `block_size`"
         );
 
-        debug!("fs: max blocks of one inode: {}", MAX_BLOCKS_ONE_INODE);
+        debug!("fs: max blocks of one inode: {}", MAX_BLOCKS_PER_INODE);
         debug!(
             "fs: max data size of one inode: {} Bytes({} MBytes)",
-            MAX_CAPACITY_ONE_INODE,
-            MAX_CAPACITY_ONE_INODE / 1024 / 1024
+            CAPACITY_PER_INODE,
+            CAPACITY_PER_INODE / 1024 / 1024
         );
 
         let super_blocks_num = 1;
@@ -72,8 +72,10 @@ impl FileSystem {
         let inode_area = inode_bmap_blocks_num + inode_blocks_num;
 
         debug!("fs: total blocks: {}", total_blocks_num);
-        debug!("fs: inode blocks: {}", inode_blocks_num);
-        debug!("fs: inode bitmap blocks: {}", inode_bmap_blocks_num);
+        debug!(
+            "fs: inode area: inode bitmap({}) + inode blocks({})",
+            inode_bmap_blocks_num, inode_blocks_num
+        );
 
         let data_area = total_blocks_num - super_blocks_num - logging_blocks_num - inode_area; // bitmap + data blocks
         let data_bmap_blocks = (data_area / (1 + 8 * BLOCK_SIZE as u64)) + 1;
@@ -84,29 +86,30 @@ impl FileSystem {
             "No more space for data blocks."
         );
 
-        debug!("fs: data blocks: {}", data_blocks_num);
-        debug!("fs: data bitmap blocks: {}", data_bmap_blocks);
+        debug!(
+            "fs: data area: data bitmap({}) + data blocks({})",
+            data_bmap_blocks, data_blocks_num
+        );
 
         let inode_bmap_start = SUPER_BLOCK_LOC + super_blocks_num;
         let inode_start = inode_bmap_start + inode_bmap_blocks_num;
         let data_bmap_start = inode_start + inode_blocks_num;
         let data_start = data_bmap_start + data_bmap_blocks;
 
-        let fs = FileSystem::open(dev, false).expect("Failed to create file system.");
-        let root_inode = fs
-            .init(SuperBlock::new(
-                total_blocks_num,
-                inode_bmap_start,
-                inode_start,
-                inode_blocks_num,
-                data_bmap_start,
-                data_start,
-                data_blocks_num,
-            ))
-            .unwrap();
+        let sb = SuperBlock::new(
+            total_blocks_num,
+            inode_bmap_start,
+            inode_start,
+            inode_blocks_num,
+            data_bmap_start,
+            data_start,
+            data_blocks_num,
+        );
+        debug!("fs: init fs with super block: {:#?}", sb);
+        let root_inode = Self::init_fs(dev.clone(), sb).unwrap();
         assert_eq!(root_inode.lock().inode_num, 0);
 
-        Ok(fs)
+        Ok(FileSystem::open(dev, true).expect("Failed to create file system."))
     }
 
     pub fn open(dev: Arc<dyn BlockDevice>, validate: bool) -> Result<Arc<Self>, FileSystemInvalid> {
@@ -130,37 +133,52 @@ impl FileSystem {
             })
     }
 
+    pub fn init(self: &Arc<Self>, sb: SuperBlock) -> Result<(), FileSystemInitError> {
+        let _ = FileSystem::init_fs(self.dev.clone(), sb)?;
+        Ok(())
+    }
+
     /// Initialize the file system.
-    ///
-    /// Note: **This is not safe, only should be used in tests.**
-    pub fn init(
-        self: &Arc<Self>,
+    pub fn init_fs(
+        dev: Arc<dyn BlockDevice>,
         sb: SuperBlock,
     ) -> Result<Arc<Mutex<Inode>>, FileSystemInitError> {
+        let block_cache = Arc::new(Mutex::new(BlockCacheBuffer::new()));
+
         // Clear all non-data blocks.
         for i in 0..sb.data_start {
-            self.block_cache
-                .lock()
-                .get(i, self.dev.clone())
-                .lock()
-                .write(0, |data_block: &mut [u8; BLOCK_SIZE]| {
+            block_cache.lock().get(i, dev.clone()).lock().write(
+                0,
+                |data_block: &mut [u8; BLOCK_SIZE]| {
                     for b in data_block.iter_mut() {
                         *b = 0;
                     }
-                })
+                },
+            )
         }
 
         // Initialize the super block.
-        self.block_cache
+        block_cache
             .lock()
-            .get(SUPER_BLOCK_LOC, self.dev.clone())
+            .get(SUPER_BLOCK_LOC, dev.clone())
             .lock()
             .write(0, |super_block: &mut SuperBlock| {
                 *super_block = sb;
             });
+        block_cache.lock().flush();
+
+        block_cache
+            .lock()
+            .get(SUPER_BLOCK_LOC, dev.clone())
+            .lock()
+            .read(0, |sb_in_disk: &SuperBlock| {
+                assert_eq!(*sb_in_disk, sb, "Failed to initialize the super block.");
+            });
+
+        let fs = FileSystem::open(dev, true).expect("Failed to create file system.");
 
         // Create the root inode and initialize it.
-        self.allocate_inode(InodeType::Directory)
+        fs.allocate_inode(InodeType::Directory)
             .ok_or_else(|| FileSystemInitError(String::from("Failed to create the root inode.")))
     }
 
@@ -200,6 +218,7 @@ impl FileSystem {
     /// Allocates a free space in data area.
     pub fn allocate_block(self: &Arc<Self>) -> Option<BlockId> {
         for bmap_block_id in self.sb.data_bmap_start..self.sb.data_start {
+            let bmap_offset = bmap_block_id - self.sb.data_bmap_start;
             if let Some(offset) = self
                 .block_cache
                 .lock()
@@ -207,10 +226,16 @@ impl FileSystem {
                 .lock()
                 .write(0, |data_bmap: &mut BitmapBlock| data_bmap.allocate())
             {
-                return Some(self.sb.data_start + offset as BlockId);
+                let block_id =
+                    self.sb.data_start + bmap_offset * BLOCK_SIZE as u64 + offset as BlockId;
+                if block_id >= self.sb.data_start + self.sb.data_blocks {
+                    warn!("fs: block id exceeds the range of data blocks.");
+                    return None;
+                }
+                return Some(block_id);
             }
         }
-        warn!("bitmap: can't find an available bit.");
+        warn!("fs: can't find an available block.");
         None
     }
 

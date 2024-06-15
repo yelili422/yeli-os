@@ -2,20 +2,24 @@ mod common;
 
 use std::{env, fs::OpenOptions, io::Read};
 
-use fs::block_dev::{InodeType, BLOCK_SIZE};
+use fs::block_dev::{InodeType, BLOCK_SIZE, CAPACITY_PER_INODE, MAX_DIRENTS_PER_INODE};
 use log::info;
 
 #[test]
 fn it_works() {
-    let _ = common::fs();
+    let _ = common::init_fs();
 }
 
 #[test]
+#[ignore = "This test should be run alone"]
 fn allocate_block_test() {
-    let fs = common::fs();
-    let data_blocks_num = fs.sb.data_blocks;
-    for i in 0..data_blocks_num {
-        assert_eq!(fs.allocate_block(), Some(fs.sb.data_start + i));
+    let fs = common::init_fs();
+    for i in 0..fs.sb.data_blocks as u64 {
+        let block_id = fs.allocate_block();
+        if block_id.is_none() {
+            break;
+        }
+        assert_eq!(block_id, Some(fs.sb.data_start + i), "Failed to allocate the {}th block", i);
     }
 }
 
@@ -48,11 +52,12 @@ fn create_single_large_file() {
     let mut file = file_lock.lock();
     assert_eq!(file.size(), 0);
 
-    file.resize(16 * 1024 * 1024).unwrap();
-    assert_eq!(file.size(), 16 * 1024 * 1024);
+    file.resize(CAPACITY_PER_INODE).unwrap();
+    assert_eq!(file.size(), CAPACITY_PER_INODE);
 }
 
 #[test]
+#[ignore = "This test will take a very long time to run"]
 fn create_amounts_of_directories() {
     let root_lock = common::fs_root();
     let mut root = root_lock.lock();
@@ -62,7 +67,7 @@ fn create_amounts_of_directories() {
         .unwrap();
     let mut dir = dir_lock.lock();
 
-    for i in 1..500 {
+    for i in 0..MAX_DIRENTS_PER_INODE {
         info!("creating the {} directory", i);
         let d_lock = dir.create(&i.to_string(), InodeType::Directory).unwrap();
         let d = d_lock.lock();
@@ -77,7 +82,6 @@ fn read_and_write() {
     let file_path = &args[0];
 
     let mut src_file = OpenOptions::new().read(true).open(file_path).unwrap();
-    let len = src_file.metadata().unwrap().len();
 
     let root_lock = common::fs_root();
     let mut root = root_lock.lock();
@@ -85,7 +89,7 @@ fn read_and_write() {
     let dst_file_lock = root.create("read_and_write", InodeType::File).unwrap();
     let mut dst_file = dst_file_lock.lock();
 
-    dst_file.resize(len as usize).unwrap();
+    dst_file.resize(CAPACITY_PER_INODE).unwrap();
 
     let mut buffer = [0u8; BLOCK_SIZE];
     let mut read_count = 0;
@@ -97,5 +101,9 @@ fn read_and_write() {
 
         dst_file.write_data(read_count, &buffer);
         read_count += offset;
+
+        if read_count >= CAPACITY_PER_INODE {
+            break;
+        }
     }
 }

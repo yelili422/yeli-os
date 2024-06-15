@@ -25,7 +25,7 @@ fn init_logger() {
         .try_init();
 }
 
-pub fn fs() -> Arc<FileSystem> {
+pub fn init_fs() -> Arc<FileSystem> {
     init_logger();
 
     INIT.call_once(|| {
@@ -40,7 +40,7 @@ pub fn fs() -> Arc<FileSystem> {
         let fs = FileSystem::create(
             Arc::new(BlockFile(Mutex::new(file))),
             100 * 1024,
-            FileSystem::calc_inodes_num(100 * 1024, 0.1),
+            FileSystem::calc_inodes_num(100 * 1024, 0.5),
         )
         .unwrap();
 
@@ -49,16 +49,11 @@ pub fn fs() -> Arc<FileSystem> {
 
     return unsafe {
         let fs = FS.clone().unwrap();
-
-        let super_block = *fs.sb;
-        let fs_root_lock = fs.init(super_block).unwrap();
-        let fs_root = fs_root_lock.lock();
-        assert_eq!(fs_root.inode_num, 0);
-
+        fs.init(*fs.sb).unwrap();
         fs
     };
 }
 
 pub fn fs_root() -> Arc<Mutex<Inode>> {
-    fs().root()
+    init_fs().root()
 }

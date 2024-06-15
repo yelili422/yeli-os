@@ -11,7 +11,7 @@ use spin::Mutex;
 use crate::{
     block_dev::{
         BlockId, DInode, DirEntry, InBlockOffset, InodeId, InodeType, BLOCK_SIZE, DIR_ENTRY_SIZE,
-        MAX_CAPACITY_ONE_INODE, N_DIRECT,
+        CAPACITY_PER_INODE, N_DIRECT,
     },
     FileSystem, FileSystemAllocationError,
 };
@@ -56,7 +56,7 @@ impl InodeCacheBuffer {
                 inode
             }
             None => {
-                let (block_id, in_block_offset) = fs.sb.inode_pos(inum);
+                let (block_id, in_block_offset) = fs.sb.find_inode(inum);
 
                 // Acquire cache buffer block.
                 let mut block_cache = fs.block_cache.lock();
@@ -99,10 +99,8 @@ pub struct Inode {
     // Copy of `DInode`.
     /// File type.
     type_:     InodeType,
-    /// Major device number.
-    major:     InodeId,
-    /// Minor device number.
-    minor:     InodeId,
+    /// Indirect block number.
+    indirect:     InodeId,
     /// Counts the number of directory entries that refer to this inode.
     links_num: u64,
     /// Size of file (bytes).
@@ -148,8 +146,7 @@ impl Inode {
             in_block_offset,
             inode_num,
             type_: dinode.type_,
-            major: dinode.major,
-            minor: dinode.minor,
+            indirect: dinode.indirect,
             links_num: dinode.links_num,
             size: dinode.size,
             addresses: dinode.addresses,
@@ -161,7 +158,7 @@ impl Inode {
     }
 
     fn dinode(&self) -> DInode {
-        DInode::new(self.type_, self.major, self.minor, self.links_num, self.size, self.addresses)
+        DInode::new(self.type_, self.indirect, self.links_num, self.size, self.addresses)
     }
 
     pub fn update_dinode<V>(&mut self, f: impl FnOnce(&mut DInode) -> V) -> V {
@@ -175,8 +172,7 @@ impl Inode {
 
             // Update the fields in `Inode`.
             self.type_ = dinode.type_;
-            self.major = dinode.major;
-            self.minor = dinode.minor;
+            self.indirect = dinode.indirect;
             self.links_num = dinode.links_num;
             self.size = dinode.size;
             self.addresses = dinode.addresses;
@@ -197,7 +193,7 @@ impl Inode {
     }
 
     pub fn look_up(&self, name: &str) -> Option<Arc<Mutex<Inode>>> {
-        assert_eq!(self.type_, InodeType::Directory);
+        assert_eq!(self.type_, InodeType::Directory, "Only directories can look up files.");
 
         let files_num = self.size() / DIR_ENTRY_SIZE;
         let fs = self.fs.upgrade().unwrap();
@@ -283,7 +279,7 @@ impl Inode {
     }
 
     pub fn resize(&mut self, new_size: usize) -> Result<(), FileSystemAllocationError> {
-        if new_size > MAX_CAPACITY_ONE_INODE {
+        if new_size > CAPACITY_PER_INODE {
             return Err(FileSystemAllocationError::TooLarge(new_size));
         }
 
@@ -344,20 +340,21 @@ impl Inode {
 #[derive(Debug, Clone, Copy)]
 pub struct InodeNotExists(InodeId);
 
-/// Skips the next path element.
-///
-/// Returns next path element and the element following that.
-/// If no next path element, return `None`.
-///
-/// # Examples
-///
-/// ```no_run
-/// assert_eq!(skip("a/bb/c"), Some(("a", "bb/c")));
-/// assert_eq!(skip("///a/bb"), Some(("a", "bb")));
-/// assert_eq!(skip("a"), Some(("a", "")));
-/// assert_eq!(skip(""), None);
-/// ```
-///
+// Skips the next path element.
+//
+// Returns next path element and the element following that.
+// If no next path element, return `None`.
+//
+// # Examples
+//
+// ```
+// assert_eq!(skip("a/bb/c"), Some(("a", "bb/c")));
+// assert_eq!(skip("///a/bb"), Some(("a", "bb")));
+// assert_eq!(skip("a"), Some(("a", "")));
+// assert_eq!(skip(""), None);
+// ```
+//
+#[allow(dead_code)]
 fn skip(path: &str) -> Option<(&str, &str)> {
     let mut p = 0;
 
