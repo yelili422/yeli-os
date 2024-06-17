@@ -1,4 +1,20 @@
+MODE ?= release
+TARGET ?= riscv64gc-unknown-none-elf
+BUILD_ARGS ?=
+IMG ?= rootfs.img
+BINS ?= bin
 
-.PHONY: fs
-fs:
-	cargo run --package fs --bin mkfs target/fs.img Cargo.toml
+ifeq ($(MODE), release)
+  BUILD_ARGS += --release
+endif
+
+.PHONY: build
+build:
+	cargo build $(BUILD_ARGS) --all-targets
+
+mkfs:
+	cargo run $(BUILD_ARGS) --bin mkfs -- $(IMG) $(BINS)
+
+.PHONY: clean
+clean:
+	cargo clean

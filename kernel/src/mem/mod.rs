@@ -28,6 +28,12 @@ pub const TRAMPOLINE: Address = MAX_VA - PAGE_SIZE + 1;
 /// The address of trap frame.
 pub const TRAPFRAME: Address = TRAMPOLINE - PAGE_SIZE;
 
+/// MMIO base address.
+pub const MMIO_BASE: Address = 0x1000_1000;
+
+/// MMIO length.
+pub const MMIO_LEN: usize = 0x1000;
+
 /// The kernel stack address of this process.
 pub const fn kernel_stack(pid: TaskId) -> VirtualAddress {
     TRAMPOLINE - (pid as usize + 1) * 2 * PAGE_SIZE
@@ -76,6 +82,9 @@ unsafe fn kvm_make() -> &'static mut PageTable {
     //     let page = alloc_one_page().expect("kvm_make: allocate kernel stack failed.");
     //     pt.map(kernel_stack(pid), page, PAGE_SIZE, PTEFlags::R | PTEFlags::W);
     // }
+
+    debug!("page_table: mapping MMIO section...");
+    pt.map(MMIO_BASE, MMIO_BASE, MMIO_LEN, PTEFlags::R | PTEFlags::W);
 
     pt
 }

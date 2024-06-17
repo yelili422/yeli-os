@@ -2,6 +2,11 @@ TARGET ?= riscv64gc-unknown-none-elf
 APP_DIR ?= src/bin
 
 MODE ?= release
+BUILD_ARGS ?=
+
+ifeq ($(MODE), release)
+  BUILD_ARGS += --release
+endif
 
 TARGET_DIR ?= target/$(TARGET)/$(MODE)
 INSTALL_DIR ?=
@@ -18,7 +23,7 @@ build: binary
 
 .PHONY: elf
 elf: $(APPS)
-	@cargo build --release
+	@cargo build $(BUILD_ARGS)
 
 .PHONY: binary
 binary: elf

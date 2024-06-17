@@ -1,8 +1,8 @@
 KERNEL_NAME = yeli-os
 
-MODE = debug
-TARGET = riscv64gc-unknown-none-elf
-BUILD_ARGS =
+MODE ?= debug
+TARGET ?= riscv64gc-unknown-none-elf
+BUILD_ARGS ?=
 
 ifeq ($(MODE), release)
   BUILD_ARGS += --release
@@ -25,6 +25,9 @@ ifeq ($(KERNEL_ELF),)
   KERNEL_ELF = $(BUILD_PATH)/$(KERNEL_NAME)
 endif
 
+.PHONY: build
+build: $(KERNEL_BIN)
+
 $(KERNEL_ELF):
 	cargo build $(BUILD_ARGS)
 
@@ -32,10 +35,6 @@ $(KERNEL_BIN): $(KERNEL_ELF)
 	@# Transform the output of ELF into binary format
 	@# and discord metadata to ensure machine finds the first instruction
 	rust-objcopy $(KERNEL_ELF) --strip-all -O binary $(KERNEL_BIN)
-
-.PHONY: build
-build: $(KERNEL_BIN)
-
 
 QEMU = qemu-system-riscv64
 # In virt platform, the physical address starts at 0x8000_0000,

@@ -3,7 +3,6 @@ use fs::{
     inode::Inode,
     FileSystem,
 };
-use log::{LevelFilter, Metadata, Record};
 use spin::{Mutex, MutexGuard};
 use std::{
     env,
@@ -31,28 +30,9 @@ impl BlockDevice for BlockFile {
     }
 }
 
-struct Logger;
-
-impl log::Log for Logger {
-    fn enabled(&self, _metadata: &Metadata) -> bool {
-        unimplemented!()
-    }
-
-    fn log(&self, record: &Record) {
-        println!("{} - {}", record.level(), record.args());
-    }
-
-    fn flush(&self) {}
-}
-
-static LOGGER: Logger = Logger;
-
 const FS_SIZE: u64 = 16 * 1024 * 1024; // 16 MiB
 
 fn main() {
-    log::set_logger(&LOGGER).unwrap();
-    log::set_max_level(LevelFilter::Debug);
-
     let args: Vec<_> = env::args().collect();
     if args.len() < 2 {
         panic!("Usage: mkfs <fs.img> [files]")
@@ -88,10 +68,12 @@ fn main() {
                 let entry = entry.unwrap();
                 let file_path = entry.path();
                 if file_path.is_file() {
+                    eprintln!("copying {} to /bin ...", file_path.display());
                     copy2(&fs, &file_path, &mut bin_dir);
                 }
             }
         } else if file_path.is_file() {
+            eprintln!("copying {} to /bin ...", file_path.display());
             copy2(&fs, file_path, &mut bin_dir);
         }
     }

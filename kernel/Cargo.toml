@@ -21,3 +21,4 @@ log = "0.4.14"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 bitflags = "2.0.2"
 bit_field = "0.10.1"
+dtb = "0.2.0"
