@@ -303,7 +303,7 @@ impl FileSystem {
         });
     }
 
-    fn look_up(
+    pub fn look_up(
         self: &Arc<Self>,
         inode: &MutexGuard<Inode>,
         name: &str,

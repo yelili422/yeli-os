@@ -1,14 +1,16 @@
-use std::{env, fs::OpenOptions, path::Path, sync::Arc};
-
 use fs::{
     block_dev::{BlockDevice, InodeType, BLOCK_SIZE},
+    inode::Inode,
     FileSystem,
 };
 use log::{LevelFilter, Metadata, Record};
-use spin::Mutex;
+use spin::{Mutex, MutexGuard};
 use std::{
-    fs::File,
+    env,
+    fs::{File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
+    path::Path,
+    sync::Arc,
 };
 
 pub struct BlockFile(pub Mutex<File>);
@@ -76,28 +78,97 @@ fn main() {
     let mut bin_dir = bin_dir_lock.lock();
 
     for i in 2..args.len() {
-        let file_path = &args[i];
-        let short_name = Path::new(file_path).file_name().unwrap().to_str().unwrap();
-
-        let mut source_file = OpenOptions::new().read(true).open(file_path).unwrap();
-        let source_len = source_file.metadata().unwrap().len();
-
-        let file_lock = fs
-            .create_inode(&mut bin_dir, short_name, InodeType::File)
-            .unwrap();
-        let mut file = file_lock.lock();
-        fs.resize_inode(&mut file, source_len as usize).unwrap();
-
-        let mut buffer = [0u8; BLOCK_SIZE];
-        let mut read_count = 0;
-        loop {
-            let offset = source_file.read(&mut buffer).unwrap();
-            if offset == 0 {
-                break;
-            }
-
-            fs.write_inode(&mut file, read_count, &buffer);
-            read_count += offset;
+        let file_path = Path::new(&args[i]);
+        if !file_path.exists() {
+            panic!("File not found: {}", file_path.display());
         }
+
+        if file_path.is_dir() {
+            for entry in file_path.read_dir().unwrap() {
+                let entry = entry.unwrap();
+                let file_path = entry.path();
+                if file_path.is_file() {
+                    copy2(&fs, &file_path, &mut bin_dir);
+                }
+            }
+        } else if file_path.is_file() {
+            copy2(&fs, file_path, &mut bin_dir);
+        }
+    }
+}
+
+fn copy2(fs: &Arc<FileSystem>, src: &Path, dst: &mut MutexGuard<Inode>) {
+    assert!(src.is_file());
+    assert!(dst.type_ == InodeType::Directory);
+
+    let short_name = src.file_name().unwrap().to_str().unwrap();
+
+    let mut source_file = OpenOptions::new().read(true).open(src).unwrap();
+    let source_len = source_file.metadata().unwrap().len();
+
+    let file_lock = fs.create_inode(dst, short_name, InodeType::File).unwrap();
+    let mut file = file_lock.lock();
+    fs.resize_inode(&mut file, source_len as usize).unwrap();
+
+    let mut buffer = [0u8; BLOCK_SIZE];
+    let mut read_count = 0;
+    loop {
+        let offset = source_file.read(&mut buffer).unwrap();
+        if offset == 0 {
+            break;
+        }
+
+        fs.write_inode(&mut file, read_count, &buffer);
+        read_count += offset;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assert_cmd::prelude::*;
+    use std::process::Command;
+
+    #[test]
+    fn test_mkfs() {
+        let fs_img_path = "./target/test_fs.img";
+
+        Command::new("make")
+            .arg("install")
+            .current_dir("../user")
+            .env("INSTALL_DIR", "../fs/target/bins")
+            .assert()
+            .success();
+
+        Command::new("cargo")
+            .arg("build")
+            .arg("--bin")
+            .arg("mkfs")
+            .assert()
+            .success();
+
+        Command::cargo_bin("mkfs")
+            .unwrap()
+            .arg(fs_img_path)
+            .arg("./target/bins/")
+            .assert()
+            .success();
+
+        let fs_img = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(fs_img_path)
+            .unwrap();
+        let fs = FileSystem::open(Arc::new(BlockFile(Mutex::new(fs_img))), true).unwrap();
+        let fs_root_lock = fs.root();
+        let fs_root = fs_root_lock.lock();
+
+        let bin_dir_lock = fs.look_up(&fs_root, "/bin").unwrap();
+        let bin_dir = bin_dir_lock.lock();
+        assert_eq!(bin_dir.type_, InodeType::Directory);
+
+        let hello_lock = fs.look_up(&bin_dir, "hello").unwrap();
+        let hello = hello_lock.lock();
+        assert_eq!(hello.type_, InodeType::File);
     }
 }
