@@ -6,7 +6,7 @@ use spin::Mutex;
 use crate::block_dev::{BlockDevice, BlockId, InBlockOffset, BLOCK_SIZE};
 
 /// The size of cache buffer.
-const BLOCK_BUFFER_SIZE: usize = 64;
+pub const BLOCK_BUFFER_SIZE: usize = 64;
 
 pub struct BlockCache {
     cache:     [u8; BLOCK_SIZE],
@@ -43,7 +43,7 @@ impl BlockCache {
     {
         let offset = offset as usize;
         let size = size_of::<T>();
-        assert!(offset + size <= BLOCK_SIZE);
+        assert!(offset + size <= BLOCK_SIZE, "offset: {}, size: {}", offset, size);
 
         &*(self.get_addr(offset) as *const T)
     }
@@ -54,7 +54,7 @@ impl BlockCache {
     {
         let offset = offset as usize;
         let size = size_of::<T>();
-        assert!(offset + size <= BLOCK_SIZE);
+        assert!(offset + size <= BLOCK_SIZE, "offset: {}, size: {}", offset, size);
 
         self.modified = true;
         &mut *(self.get_addr(offset) as *mut T)
@@ -87,13 +87,15 @@ impl Drop for BlockCache {
 
 /// Linked list of all buffers. Sorted by how recently the buffer used.
 pub struct BlockCacheBuffer {
-    buffer: VecDeque<(BlockId, Arc<Mutex<BlockCache>>)>,
+    buffer:   VecDeque<(BlockId, Arc<Mutex<BlockCache>>)>,
+    capacity: usize,
 }
 
 impl BlockCacheBuffer {
-    pub fn new() -> Self {
+    pub fn new(capacity: usize) -> Self {
         Self {
             buffer: VecDeque::new(),
+            capacity,
         }
     }
 
@@ -110,7 +112,7 @@ impl BlockCacheBuffer {
         } else {
             // Not cached.
             // Recycle the unused buffer by LRU.
-            if self.buffer.len() == BLOCK_BUFFER_SIZE {
+            if self.buffer.len() == self.capacity {
                 // front to back.
                 if let Some((idx, _)) = self
                     .buffer
@@ -140,5 +142,56 @@ impl BlockCacheBuffer {
         for (_, cache) in self.buffer.iter() {
             cache.lock().sync()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[allow(unused_imports)]
+    use super::*;
+
+    struct MockBlockDevice {
+        pub data: [u8; BLOCK_SIZE],
+    }
+
+    impl MockBlockDevice {
+        pub fn new() -> Self {
+            Self {
+                data: [0; BLOCK_SIZE],
+            }
+        }
+    }
+
+    impl BlockDevice for MockBlockDevice {
+        fn read(&self, _block_id: BlockId, buf: &mut [u8]) {
+            buf.copy_from_slice(&self.data);
+        }
+
+        fn write(&self, _block_id: BlockId, _buf: &[u8]) {}
+    }
+
+    #[test]
+    fn test_block_cache_buffer() {
+        let dev = Arc::new(MockBlockDevice::new());
+        let mut block_cache = BlockCacheBuffer::new(2);
+
+        let cache1 = block_cache.get(1, dev.clone());
+        let cache2 = block_cache.get(2, dev.clone());
+
+        assert_eq!(block_cache.buffer.len(), 2);
+        assert_eq!(block_cache.buffer[0].0, 1);
+        assert_eq!(block_cache.buffer[1].0, 2);
+
+        drop(cache1);
+        let cache3 = block_cache.get(3, dev.clone());
+        assert_eq!(block_cache.buffer.len(), 2);
+        assert_eq!(block_cache.buffer[0].0, 2);
+        assert_eq!(block_cache.buffer[1].0, 3);
+
+        drop(cache2);
+        drop(cache3);
+        assert_eq!(block_cache.buffer.len(), 2);
+        assert_eq!(block_cache.buffer[0].0, 2);
+        assert_eq!(block_cache.buffer[1].0, 3);
     }
 }

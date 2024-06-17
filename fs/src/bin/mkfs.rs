@@ -70,7 +70,9 @@ fn main() {
     let fs_root_lock = fs.root();
     let mut fs_root = fs_root_lock.lock();
 
-    let bin_dir_lock = fs_root.create("/bin", InodeType::Directory).unwrap();
+    let bin_dir_lock = fs
+        .create_inode(&mut fs_root, "/bin", InodeType::Directory)
+        .unwrap();
     let mut bin_dir = bin_dir_lock.lock();
 
     for i in 2..args.len() {
@@ -80,9 +82,11 @@ fn main() {
         let mut source_file = OpenOptions::new().read(true).open(file_path).unwrap();
         let source_len = source_file.metadata().unwrap().len();
 
-        let file_lock = bin_dir.create(short_name, InodeType::File).unwrap();
+        let file_lock = fs
+            .create_inode(&mut bin_dir, short_name, InodeType::File)
+            .unwrap();
         let mut file = file_lock.lock();
-        file.resize(source_len as usize).unwrap();
+        fs.resize_inode(&mut file, source_len as usize).unwrap();
 
         let mut buffer = [0u8; BLOCK_SIZE];
         let mut read_count = 0;
@@ -92,7 +96,7 @@ fn main() {
                 break;
             }
 
-            file.write_data(read_count, &buffer);
+            fs.write_inode(&mut file, read_count, &buffer);
             read_count += offset;
         }
     }

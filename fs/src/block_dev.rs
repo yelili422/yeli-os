@@ -136,23 +136,37 @@ impl SuperBlock {
 }
 
 /// The type of bitmap block, group of `BLOCK_SIZE`.
-#[repr(C)]
-pub struct BitmapBlock([bool; BLOCK_SIZE]);
+#[repr(transparent)]
+pub struct BitmapBlock {
+    inner: [u8; BLOCK_SIZE],
+}
 
 impl BitmapBlock {
     pub fn allocate(&mut self) -> Option<usize> {
-        match self.0.iter().enumerate().find(|&(_, used)| !used) {
-            Some((idx, _)) => {
-                self.0[idx] = true;
-                Some(idx)
+        for (i, &byte) in self.inner.iter().enumerate() {
+            if byte == 0xff {
+                continue;
             }
-            None => None,
+            for offset in 0..8 {
+                if byte & (1 << offset) == 0 {
+                    self.inner[i] |= 1 << offset;
+                    return Some(i * 8 + offset);
+                }
+            }
         }
+        None
     }
 
     pub fn free(&mut self, idx: usize) {
-        assert_eq!(self.0[idx], true, "bitmap: This bit is already freed.");
-        self.0[idx] = false;
+        let byte = idx / 8;
+        let offset = idx % 8;
+        assert_ne!(
+            self.inner[byte] & (1 << offset),
+            0,
+            "bitmap: This bit is already freed. {}",
+            idx
+        );
+        self.inner[byte] &= !(1 << offset);
     }
 }
 
@@ -386,7 +400,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn super_block_test() {
+    fn test_super_block() {
         let x = &mut [0u8; size_of::<SuperBlock>()];
         let sb = x as *mut _ as *mut SuperBlock;
 
@@ -410,18 +424,21 @@ mod tests {
     }
 
     #[test]
-    fn bitmap_test() {
-        let mut bmap = BitmapBlock([false; BLOCK_SIZE]);
-        for _ in 0..BLOCK_SIZE {
-            assert_eq!(bmap.allocate(), Some(0));
-            bmap.free(0);
-        }
+    fn test_bitmap_size() {
+        assert_eq!(size_of::<BitmapBlock>(), BLOCK_SIZE);
+    }
 
-        for i in 0..BLOCK_SIZE {
+    #[test]
+    fn test_bitmap() {
+        let mut bmap = BitmapBlock {
+            inner: [0; BLOCK_SIZE],
+        };
+
+        for i in 0..BLOCK_SIZE * 8 {
             assert_eq!(bmap.allocate(), Some(i));
         }
 
-        for i in (0..BLOCK_SIZE).rev() {
+        for i in (0..BLOCK_SIZE * 8).rev() {
             bmap.free(i);
         }
     }
