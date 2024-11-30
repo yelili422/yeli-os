@@ -1,3 +1,5 @@
+use core::sync::atomic::{AtomicUsize, Ordering};
+
 use log::trace;
 use riscv::register::time;
 
@@ -5,7 +7,7 @@ use crate::syscall::set_timer;
 
 pub const INTERVAL: usize = 100_000;
 
-pub static mut TICKS: usize = 0;
+pub static TICKS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn set_next_timer() {
     set_timer(time::read() + INTERVAL);
@@ -13,10 +15,8 @@ pub fn set_next_timer() {
 
 pub fn tick() {
     set_next_timer();
-    unsafe {
-        TICKS += 1;
-        if TICKS % 100 == 0 {
-            trace!("ticks: {}", TICKS);
-        }
+    TICKS.fetch_add(1, Ordering::Relaxed);
+    if TICKS.load(Ordering::Relaxed) % 100 == 0 {
+        trace!("ticks: {}", TICKS.load(Ordering::Relaxed));
     }
 }

@@ -1,96 +1,14 @@
-use core::{
-    alloc::{GlobalAlloc, Layout},
-    ops::Deref,
-    panic,
-    ptr::{null_mut, NonNull},
-};
-
-use log::{debug, error};
-use spin::Mutex;
-
-use crate::{
-    mem::{
-        address::{as_mut, PhysicalAddress},
-        PAGE_SIZE,
-    },
-    pa2va, va2pa,
-};
-
-use self::buddy_allocator::BuddyAllocator;
+use crate::mem::{address::PhysicalAddress, PAGE_SIZE};
+pub use buddy_allocator::FRAME_ALLOCATOR;
+use core::alloc::{GlobalAlloc, Layout};
 
 mod buddy_allocator;
-mod bump_allocator;
-// mod list_allocator;
+mod slab_allocator;
 
 pub trait FrameAllocator {
-    fn allocate(&mut self) -> Option<PhysicalAddress>;
-    fn free(&mut self, pa: PhysicalAddress);
+    fn alloc_pages(&mut self, pages: usize) -> Option<PhysicalAddress>;
+    fn free_pages(&mut self, addr: PhysicalAddress, pages: usize);
 }
-
-pub struct LockedAllocator<const ORDER: usize> {
-    inner: Mutex<Option<BuddyAllocator<ORDER>>>,
-}
-
-impl<const ORDER: usize> LockedAllocator<ORDER> {
-    const fn new() -> Self {
-        LockedAllocator {
-            inner: Mutex::new(None),
-        }
-    }
-
-    pub unsafe fn init(&mut self, pa_start: PhysicalAddress, pa_end: PhysicalAddress) {
-        debug!("allocator: init from 0x{:x} to 0x{:x}", pa_start, pa_end);
-        let mut allocator = self.lock();
-        {
-            *allocator = Some(BuddyAllocator::<ORDER>::new(
-                NonNull::new_unchecked(pa_start as *mut _),
-                NonNull::new_unchecked(pa_end as *mut _),
-            ))
-        }
-    }
-}
-
-unsafe impl<const ORDER: usize> GlobalAlloc for LockedAllocator<ORDER> {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        debug!("allocator: allocate request: {:?}", layout);
-
-        match *self.lock() {
-            Some(ref mut allocator) => match allocator.allocate(layout) {
-                Ok(pa) => {
-                    debug!("allocator: allocate result: start address: 0x{:x}", pa as usize);
-                    as_mut(pa2va!(pa as usize))
-                },
-                Err(_) => {
-                    error!("allocate finished, but return a null pointer.");
-                    null_mut()
-                }
-            },
-            _ => panic!(""),
-        }
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        debug!("dealloc: {:?}", layout);
-
-        match *self.lock() {
-            Some(ref mut allocator) => {
-                allocator.free(NonNull::new_unchecked(va2pa!(ptr as usize) as *mut _), layout);
-            }
-            _ => panic!(""),
-        }
-    }
-}
-
-impl<const B: usize> Deref for LockedAllocator<B> {
-    type Target = Mutex<Option<BuddyAllocator<B>>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-#[global_allocator]
-pub static mut FRAME_ALLOCATOR: LockedAllocator<16> = LockedAllocator::<16>::new();
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: Layout) -> ! {

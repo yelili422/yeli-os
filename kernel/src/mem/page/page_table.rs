@@ -225,6 +225,7 @@ impl IndexMut<usize> for PageTable {
 }
 
 pub unsafe fn enable_paging(token: usize) {
+    debug!("page_table: enable paging with satp: 0x{:x}", token);
     satp::write(token);
     asm!("sfence.vma"); // clear tlb
 }

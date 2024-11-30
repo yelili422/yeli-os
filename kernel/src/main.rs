@@ -8,10 +8,11 @@ use syscall::shutdown;
 use yeli_os::init;
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn _start(_hart_id: usize, _dtb_addr: usize) -> ! {
     init();
-    info!("Welcome to YeLi-OS ~");
 
+    info!("Welcome to YeLi-OS ~");
     info!("It did not crash!");
+
     shutdown()
 }

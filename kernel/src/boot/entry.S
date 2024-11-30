@@ -12,6 +12,6 @@ spin:
 .section .bss.stack
 .global boot_stack
 boot_stack:
-.space  1024 * 1024 * 4    # 4M
+.space  1024 * 1024 * 16   # 16M
 .global boot_stack_top
 boot_stack_top:

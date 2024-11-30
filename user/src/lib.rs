@@ -1,6 +1,5 @@
 #![no_std]
 #![feature(linkage)]
-#![feature(panic_info_message)]
 
 use core::panic::PanicInfo;
 
@@ -29,10 +28,10 @@ fn panic(info: &PanicInfo) -> ! {
             "\n[panic] at {}:{} {}",
             location.file(),
             location.line(),
-            info.message().unwrap()
+            info.message()
         );
     } else {
-        println!("[panic] {}", info.message().unwrap());
+        println!("[panic] {}", info.message());
     }
     loop {}
 }

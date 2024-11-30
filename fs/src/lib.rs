@@ -1,5 +1,4 @@
 #![no_std]
-#![feature(generic_nonzero)]
 
 extern crate alloc;
 

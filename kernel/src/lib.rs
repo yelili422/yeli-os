@@ -6,7 +6,6 @@
 // calls test_runner, but this function is ignored because we use
 // the #[no_main] attribute and provide our own entry point.
 #![reexport_test_harness_main = "test_main"]
-#![feature(panic_info_message)]
 #![feature(alloc_error_handler)]
 
 extern crate alloc;
@@ -56,9 +55,9 @@ where
     T: Fn(),
 {
     fn run(&self) {
-        print!("[test] {}...\t", core::any::type_name::<T>());
+        print!("[test] {} ...\t", core::any::type_name::<T>());
         self();
-        println!("ok");
+        print!("ok\n");
     }
 }
 
@@ -81,14 +80,9 @@ pub fn test_runner(tests: &[&dyn Testable]) {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     if let Some(location) = info.location() {
-        println!(
-            "\n[panic] at {}:{} {}",
-            location.file(),
-            location.line(),
-            info.message().unwrap()
-        );
+        println!("\n[panic] at {}:{} {}", location.file(), location.line(), info.message());
     } else {
-        println!("[panic] {}", info.message().unwrap());
+        println!("[panic] {}", info.message());
     }
     syscall::shutdown()
 }
@@ -96,6 +90,6 @@ fn panic(info: &PanicInfo) -> ! {
 #[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("failed\n{}\n", &info);
+    println!("\x1b[31m[test] failed\x1b[0m: {}\n", &info);
     syscall::shutdown()
 }

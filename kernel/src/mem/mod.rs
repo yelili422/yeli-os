@@ -1,12 +1,10 @@
-use log::debug;
-
-use crate::{addr, mem::allocator::alloc_one_page, proc::TaskId};
-
 use self::{
     address::{as_mut, Address, VirtualAddress, MAX_VA},
-    allocator::FRAME_ALLOCATOR,
     page::{enable_paging, PTEFlags, PageSize, PageTable, Size4KiB},
 };
+use crate::{lp2addr, mem::allocator::alloc_one_page, proc::TaskId};
+use allocator::FRAME_ALLOCATOR;
+use log::debug;
 
 pub mod address;
 pub mod allocator;
@@ -20,7 +18,7 @@ pub const PAGE_SIZE: usize = Size4KiB::SIZE;
 pub const KERNEL_BASE: Address = 0x8020_0000;
 
 /// The end address of physical memory.
-pub const MEM_END: Address = KERNEL_BASE + 1024 * 1024 * 10;
+pub const MEM_END: Address = 0x8000_0000 + 1024 * 1024 * 128;
 
 /// The address of trampoline.
 pub const TRAMPOLINE: Address = MAX_VA - PAGE_SIZE + 1;
@@ -42,7 +40,7 @@ pub const fn kernel_stack(pid: TaskId) -> VirtualAddress {
 /// Converts a linker identifier to address.
 #[macro_export]
 #[allow(unused_unsafe)]
-macro_rules! addr {
+macro_rules! lp2addr {
     ($link_point:ident) => {
         unsafe { &($link_point) as *const _ as usize }
     };
@@ -65,11 +63,21 @@ unsafe fn kvm_make() -> &'static mut PageTable {
 
     // map kernel text executable and read-only.
     debug!("page_table: mapping kernel text section...");
-    pt.map(KERNEL_BASE, KERNEL_BASE, addr!(etext) - KERNEL_BASE, PTEFlags::R | PTEFlags::X);
+    pt.map(
+        KERNEL_BASE,
+        KERNEL_BASE,
+        lp2addr!(etext) - KERNEL_BASE,
+        PTEFlags::R | PTEFlags::X,
+    );
 
     // map kernel data and the physical RAM we'll make use of.
     debug!("page_table: mapping kernel data section...");
-    pt.map(addr!(etext), addr!(etext), MEM_END - addr!(etext), PTEFlags::R | PTEFlags::W);
+    pt.map(
+        lp2addr!(etext),
+        lp2addr!(etext),
+        MEM_END - lp2addr!(etext),
+        PTEFlags::R | PTEFlags::W,
+    );
 
     // Map the trampoline for trap entry/exit to the hightest virtual
     // address in the kernel.
@@ -90,8 +98,10 @@ unsafe fn kvm_make() -> &'static mut PageTable {
 }
 
 pub unsafe fn init() {
-    FRAME_ALLOCATOR.init(addr!(end), MEM_END);
+    FRAME_ALLOCATOR.init(lp2addr!(end), MEM_END);
 
     let kernel_pagetable = kvm_make();
     enable_paging(kernel_pagetable.make_satp());
+
+    debug!("page_table: initialized.");
 }

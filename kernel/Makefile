@@ -62,7 +62,7 @@ clean:
 test: $(KERNEL_BIN)
 	@cargo test --lib
 
-GDB = riscv64-unknown-elf-gdb
+GDB = riscv64-elf-gdb
 DGB_CLIENT_ARGS = \
 	-ex 'file $(KERNEL_ELF)' \
 	-ex 'set arch riscv:rv64' \
