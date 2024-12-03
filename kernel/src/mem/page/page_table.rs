@@ -12,7 +12,7 @@ use riscv::register::satp;
 use crate::{
     mem::{
         address::{as_mut, px, PhysicalAddress, VirtualAddress, MAX_VA, PG_SHIFT},
-        allocator::alloc_one_page,
+        allocator::alloc_pages,
         PAGE_SIZE,
     },
     pa2va, pg_round_down,
@@ -174,7 +174,7 @@ impl PageTable {
                 page_table = unsafe { as_mut(pte.pa()) };
                 trace!("page_table_walk: valid");
             } else {
-                let pa = alloc_one_page().expect("paging alloc error");
+                let pa = alloc_pages(1).expect("paging alloc error");
                 page_table[px(level, va)] = PTE::new(pa, PTEFlags::V);
                 trace!("page_table_walk: invalid, create one: {}", page_table[px(level, va)]);
                 page_table = unsafe { as_mut(pa2va!(pa)) };

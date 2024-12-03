@@ -1,20 +1,11 @@
 use super::FrameAllocator;
 use crate::{
     is_aligned,
-    mem::{
-        address::{as_mut, PhysicalAddress},
-        PAGE_SIZE,
-    },
-    pa2va, pg_round_down, pg_round_up,
+    mem::{allocator::order, PAGE_SIZE},
+    pg_round_down, pg_round_up,
 };
-use core::{
-    alloc::{GlobalAlloc, Layout},
-    cell::OnceCell,
-    ops::Deref,
-    ptr::{null_mut, NonNull},
-};
+use core::ptr::NonNull;
 use log::{debug, error, trace};
-use spin::Mutex;
 
 /// Maximum order supported by the allocator.
 /// 16 means 65536 pages (256 MiB for a 4K page size).
@@ -32,19 +23,27 @@ pub struct BuddyAllocator {
 }
 
 impl BuddyAllocator {
-    pub fn new(start_addr: usize, end_addr: usize) -> Self {
-        trace!("buddy_allocator: init from 0x{:x} to 0x{:x}", start_addr, end_addr);
-        let mut allocator = BuddyAllocator {
+    pub const fn new() -> Self {
+        Self {
             free_lists: [None; MAX_ORDER],
-            start_addr,
-            end_addr,
-        };
+            start_addr: 0,
+            end_addr:   0,
+        }
+    }
 
+    /// Initialize the allocator with the given memory range.
+    ///
+    /// Rust global_allocator needs static function to be initialized. So, we
+    /// split new and init into two functions.
+    pub fn init(&mut self, start_addr: usize, end_addr: usize) {
+        trace!("buddy_allocator: init from 0x{:x} to 0x{:x}", start_addr, end_addr);
         let start = pg_round_up!(start_addr, PAGE_SIZE);
         let end = pg_round_down!(end_addr, PAGE_SIZE);
         let pages = (end - start) / PAGE_SIZE;
 
         assert!(start < end, "start_addr must less than end_addr after align");
+        self.start_addr = start;
+        self.end_addr = end;
 
         let mut current_size = 1usize << (MAX_ORDER - 1);
         let mut addr = start;
@@ -60,8 +59,8 @@ impl BuddyAllocator {
             let order = current_size.trailing_zeros() as usize;
             let block = addr as *mut FreeBlock;
             unsafe {
-                (*block).next = allocator.free_lists[order];
-                allocator.free_lists[order] = NonNull::new(block);
+                (*block).next = self.free_lists[order];
+                self.free_lists[order] = NonNull::new(block);
             }
 
             addr += current_size * PAGE_SIZE;
@@ -71,7 +70,6 @@ impl BuddyAllocator {
             "buddy_allocator: initialized. start_addr: 0x{:x}, end_addr: 0x{:x}, pages: {}",
             start, end, pages
         );
-        allocator
     }
 
     fn split_block(
@@ -143,14 +141,14 @@ impl FrameAllocator for BuddyAllocator {
 
         assert!(is_aligned!(addr, PAGE_SIZE), "addr must be page aligned");
 
-        pages = pages.next_power_of_two();
-        let mut order = pages.trailing_zeros() as usize;
+        let mut order = order(pages);
 
         // 尝试合并伙伴块
         let mut block_addr = addr;
         while order < MAX_ORDER - 1 {
             // 计算伙伴块地址
-            let buddy_addr = self.start_addr + ((block_addr - self.start_addr) ^ (pages * PAGE_SIZE));
+            let buddy_addr =
+                self.start_addr + ((block_addr - self.start_addr) ^ (pages * PAGE_SIZE));
 
             // 检查伙伴块是否在空闲链表中
             if let Some(mut current) = self.free_lists[order] {
@@ -199,57 +197,8 @@ impl FrameAllocator for BuddyAllocator {
     }
 }
 
-pub struct LockedBuddyAllocator {
-    inner: OnceCell<Mutex<BuddyAllocator>>,
-}
-
-unsafe impl Sync for LockedBuddyAllocator {}
-
-impl LockedBuddyAllocator {
-    pub const fn new() -> Self {
-        LockedBuddyAllocator {
-            inner: OnceCell::new(),
-        }
-    }
-
-    pub unsafe fn init(&self, pa_start: PhysicalAddress, pa_end: PhysicalAddress) {
-        self.inner.get_or_init(|| {
-            debug!("allocator: init from 0x{:x} to 0x{:x}", pa_start, pa_end);
-            Mutex::new(BuddyAllocator::new(pa_start, pa_end))
-        });
-    }
-}
-
-impl Deref for LockedBuddyAllocator {
-    type Target = Mutex<BuddyAllocator>;
-
-    fn deref(&self) -> &Self::Target {
-        self.inner.get().expect("allocator not initialized")
-    }
-}
-
-// TODO: use slab allocator for global_alloc
-unsafe impl GlobalAlloc for LockedBuddyAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let page_count = (layout.size() + PAGE_SIZE - 1) / PAGE_SIZE;
-        let mut allocator_guard = self.lock();
-        match allocator_guard.alloc_pages(page_count) {
-            Some(pa) => as_mut(pa2va!(pa as usize)),
-            None => null_mut(),
-        }
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        debug!("allocator: dealloc {:?}", layout);
-
-        // let page_count = (layout.size() + PAGE_SIZE - 1) / PAGE_SIZE;
-        // let mut allocator_guard = self.lock();
-        // allocator_guard.dealloc(va2pa!(ptr as usize), page_count);
-    }
-}
-
-#[global_allocator]
-pub static FRAME_ALLOCATOR: LockedBuddyAllocator = LockedBuddyAllocator::new();
+unsafe impl Sync for BuddyAllocator {}
+unsafe impl Send for BuddyAllocator {}
 
 #[cfg(test)]
 mod tests {
@@ -278,7 +227,9 @@ mod tests {
     #[test_case]
     fn test_new_allocator() {
         let mock_mem = MockMemory::new();
-        let mut allocator = BuddyAllocator::new(mock_mem.start_addr(), mock_mem.end_addr());
+        let mut allocator = BuddyAllocator::new();
+        allocator.init(mock_mem.start_addr(), mock_mem.end_addr());
+
         assert!(allocator.free_lists.iter().any(|list| list.is_some()));
 
         let addr1 = allocator.alloc_pages(1).unwrap();
@@ -292,7 +243,8 @@ mod tests {
     #[test_case]
     fn test_multiple_allocs() {
         let mock_mem = MockMemory::new();
-        let mut allocator = BuddyAllocator::new(mock_mem.start_addr(), mock_mem.end_addr());
+        let mut allocator = BuddyAllocator::new();
+        allocator.init(mock_mem.start_addr(), mock_mem.end_addr());
 
         let addr1 = allocator.alloc_pages(1).unwrap();
         let addr2 = allocator.alloc_pages(2).unwrap();
@@ -315,7 +267,8 @@ mod tests {
     #[test_case]
     fn test_fragmentation_and_coalescing() {
         let mock_mem = MockMemory::new();
-        let mut allocator = BuddyAllocator::new(mock_mem.start_addr(), mock_mem.end_addr());
+        let mut allocator = BuddyAllocator::new();
+        allocator.init(mock_mem.start_addr(), mock_mem.end_addr());
 
         let addr1 = allocator.alloc_pages(1).unwrap();
         let addr2 = allocator.alloc_pages(1).unwrap();
@@ -341,7 +294,8 @@ mod tests {
     #[test_case]
     fn test_invalid_inputs() {
         let mock_mem = MockMemory::new();
-        let mut allocator = BuddyAllocator::new(mock_mem.start_addr(), mock_mem.end_addr());
+        let mut allocator = BuddyAllocator::new();
+        allocator.init(mock_mem.start_addr(), mock_mem.end_addr());
 
         assert!(allocator.alloc_pages(0).is_none());
 
@@ -358,7 +312,8 @@ mod tests {
     fn test_alignment_requirements() {
         let mock_mem = MockMemory::new();
         // 使用未对齐的起始地址
-        let mut allocator = BuddyAllocator::new(mock_mem.start_addr() + 100, mock_mem.end_addr());
+        let mut allocator = BuddyAllocator::new();
+        allocator.init(mock_mem.start_addr(), mock_mem.end_addr());
 
         if let Some(addr) = allocator.alloc_pages(1) {
             assert!(is_aligned!(addr, PAGE_SIZE));

@@ -2,8 +2,8 @@ use self::{
     address::{as_mut, Address, VirtualAddress, MAX_VA},
     page::{enable_paging, PTEFlags, PageSize, PageTable, Size4KiB},
 };
-use crate::{lp2addr, mem::allocator::alloc_one_page, proc::TaskId};
-use allocator::FRAME_ALLOCATOR;
+use crate::{lp2addr, mem::allocator::alloc_pages, proc::TaskId};
+use allocator::init_allocator;
 use log::debug;
 
 pub mod address;
@@ -58,7 +58,7 @@ extern "C" {
 unsafe fn kvm_make() -> &'static mut PageTable {
     debug!("page_table: initializing kernel page table...");
 
-    let pa = alloc_one_page().expect("kvm_make: allocate page failed.");
+    let pa = alloc_pages(1).expect("kvm_make: allocate page failed.");
     let pt = as_mut::<PageTable>(pa);
 
     // map kernel text executable and read-only.
@@ -98,7 +98,7 @@ unsafe fn kvm_make() -> &'static mut PageTable {
 }
 
 pub unsafe fn init() {
-    FRAME_ALLOCATOR.init(lp2addr!(end), MEM_END);
+    init_allocator(lp2addr!(end), MEM_END);
 
     let kernel_pagetable = kvm_make();
     enable_paging(kernel_pagetable.make_satp());
