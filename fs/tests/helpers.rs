@@ -2,11 +2,12 @@ use alloc::{format, sync::Arc};
 use spin::Mutex;
 use std::io::{Read, Seek, SeekFrom, Write};
 
-use crate::{
+use fs::{
     block_dev::{BlockDevice, BLOCK_SIZE},
     FileSystem,
 };
 
+extern crate alloc;
 extern crate std;
 
 pub struct BlockFile(pub Mutex<std::fs::File>);

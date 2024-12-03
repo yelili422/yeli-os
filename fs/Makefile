@@ -12,6 +12,10 @@ endif
 build:
 	cargo build $(BUILD_ARGS) --all-targets
 
+.PHONY: test
+test:
+	cargo test --all-targets
+
 mkfs:
 	cargo run $(BUILD_ARGS) --bin mkfs -- $(IMG) $(BINS)
 
