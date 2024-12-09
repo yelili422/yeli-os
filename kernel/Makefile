@@ -26,7 +26,7 @@ ifeq ($(KERNEL_ELF),)
 endif
 
 .PHONY: build
-build: $(KERNEL_BIN)
+build: fmt $(KERNEL_BIN)
 
 $(KERNEL_ELF):
 	cargo build $(BUILD_ARGS)
@@ -57,6 +57,10 @@ run: $(KERNEL_BIN)
 .PHONY: clean
 clean:
 	@cargo clean
+
+.PHONY: fmt
+fmt:
+	@cargo fmt
 
 .PHONY: test
 test: $(KERNEL_BIN)

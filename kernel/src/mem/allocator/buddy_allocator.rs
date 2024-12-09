@@ -1,11 +1,13 @@
+use core::ptr::NonNull;
+
+use log::{debug, error, info, trace};
+
 use super::FrameAllocator;
 use crate::{
     is_aligned,
     mem::{allocator::order, PAGE_SIZE},
     pg_round_down, pg_round_up,
 };
-use core::ptr::NonNull;
-use log::{debug, error, trace};
 
 /// Maximum order supported by the allocator.
 /// 16 means 65536 pages (256 MiB for a 4K page size).
@@ -66,7 +68,7 @@ impl BuddyAllocator {
             addr += current_size * PAGE_SIZE;
         }
 
-        debug!(
+        info!(
             "buddy_allocator: initialized. start_addr: 0x{:x}, end_addr: 0x{:x}, pages: {}",
             start, end, pages
         );

@@ -1,8 +1,10 @@
-use super::FrameAllocator;
-use crate::{mem::PAGE_SIZE, pg_round_up};
 use core::ptr::NonNull;
+
 use log::trace;
 use spin::Mutex;
+
+use super::FrameAllocator;
+use crate::{mem::PAGE_SIZE, pg_round_up};
 
 /// The number of pages used for a slab.
 pub const SLAB_PAGES: usize = 2;
@@ -189,15 +191,15 @@ impl SlabAllocator {
                 Mutex::new(MemCache::new(8, 8)),
                 Mutex::new(MemCache::new(8, 8)),
                 Mutex::new(MemCache::new(8, 8)),
-                Mutex::new(MemCache::new(16, 8)),
-                Mutex::new(MemCache::new(32, 8)),
-                Mutex::new(MemCache::new(64, 8)),
-                Mutex::new(MemCache::new(128, 8)),
-                Mutex::new(MemCache::new(256, 8)),
-                Mutex::new(MemCache::new(512, 8)),
-                Mutex::new(MemCache::new(1024, 8)),
-                Mutex::new(MemCache::new(2048, 8)),
-                Mutex::new(MemCache::new(4096, 8)),
+                Mutex::new(MemCache::new(16, 16)),
+                Mutex::new(MemCache::new(32, 32)),
+                Mutex::new(MemCache::new(64, 64)),
+                Mutex::new(MemCache::new(128, 128)),
+                Mutex::new(MemCache::new(256, 256)),
+                Mutex::new(MemCache::new(512, 512)),
+                Mutex::new(MemCache::new(1024, 1024)),
+                Mutex::new(MemCache::new(2048, 2048)),
+                Mutex::new(MemCache::new(4096, 4096)),
             ],
             frame_allocator,
         }
@@ -205,6 +207,7 @@ impl SlabAllocator {
 }
 
 impl SlabAllocator {
+    /// TODO: support for more alignments
     pub fn alloc(&self, order: usize) -> Option<NonNull<u8>> {
         assert!(order <= MAX_SLAB_ORDER);
         self.caches[order].lock().alloc(self.frame_allocator)
@@ -223,9 +226,8 @@ unsafe impl Send for SlabAllocator {}
 mod tests {
     use spin::mutex::Mutex;
 
-    use crate::mem::allocator::buddy_allocator;
-
     use super::*;
+    use crate::mem::allocator::buddy_allocator;
 
     struct MockMemory {
         data: [u8; 4 * 1024 * 1024],

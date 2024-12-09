@@ -82,7 +82,7 @@ mod tests {
     use super::*;
 
     #[test_case]
-    pub fn test_page_ground() {
+    fn test_page_ground() {
         assert!(pg_round_up!(4095, 4096) == 4096);
         assert!(pg_round_up!(4096, 4096) == 4096);
         assert!(pg_round_up!(4097, 4096) == 8192);
@@ -99,4 +99,7 @@ mod tests {
         assert!(pg_round_down!(1234, 1) == 1234);
         assert!(pg_round_down!(0xffff, 1) == 0xffff);
     }
+
+    #[test_case]
+    fn test_px() {}
 }

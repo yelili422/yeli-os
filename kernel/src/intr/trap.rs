@@ -1,13 +1,13 @@
+use log::debug;
 use riscv::register::{scause, sepc, sstatus, stvec};
 
+use super::handle;
 use crate::{
     intr::{trampoline, userret, uservec},
-    mem::{page::current_page_table, TRAMPOLINE, TRAPFRAME},
+    mem::{TRAMPOLINE, TRAPFRAME},
     println,
     proc::TASKS,
 };
-
-use super::handle;
 
 #[repr(C)]
 #[derive(Default)]
@@ -51,6 +51,7 @@ pub struct TrapFrame {
 }
 
 /// Handles interrupt, exception or system call from user space.
+#[no_mangle]
 pub fn usertrap() {
     if sstatus::read().spp() == sstatus::SPP::Supervisor {
         panic!("usertrap: not from user mode");
@@ -76,55 +77,68 @@ pub fn usertrap() {
 }
 
 /// Returns to user space when `usertrap` is done.
-pub fn usertrapret() {
+#[no_mangle]
+pub unsafe fn usertrapret() {
     let satp: usize;
 
     {
-        let lock = TASKS.write();
-        println!(2);
+        let tasks = TASKS.write();
 
         // We're about to switch the destination of traps from `kerneltrap()`
         // to `usertrap()`, so turn off interrupts until we're back in
         // user space, where `usertrap()` is correct.
-        unsafe { sstatus::clear_sie() };
+        sstatus::clear_sie();
 
         // Send syscalls, interrupts, and exceptions to trampoline.S
         let entry = TRAMPOLINE + (uservec as usize - trampoline as usize);
-        unsafe { stvec::write(entry, stvec::TrapMode::Direct) };
+        stvec::write(entry, stvec::TrapMode::Direct);
 
         {
-            let mut proc = lock.current().expect("get current proc failed.").write();
-            println!(3);
-
-            // Set up trapframe values that `uservec` will need when the
-            // process next re-enters the kernel.
-            let stack = proc.kernel_stack.as_ref().unwrap();
-            proc.trap_frame = TrapFrame {
-                kernel_satp: current_page_table(), // i.e. kernel page table.
-                kernel_sp: stack.as_ptr() as usize + stack.len(), // kernel stack
-                kernel_trap: usertrap as usize,
-                ..Default::default()
+            let current_task = match tasks.current() {
+                Ok(current_task) => current_task,
+                Err(_) => panic!("get current process failed."),
             };
+            let proc = current_task.write();
+
+            // // Set up trapframe values that `uservec` will need when the
+            // // process next re-enters the kernel.
+            // let stack = proc.kernel_stack.as_ref();
+            // proc.trap_frame = TrapFrame {
+            //     kernel_satp: current_page_table(), // kernel page table.
+            //     kernel_sp: stack.as_ptr() as usize + stack.len(), // kernel stack
+            //     kernel_trap: usertrap as usize,
+            //     ..Default::default()
+            // };
 
             // Set up the registers that trampoline.S's `sret` will use
             // to get the usr space.
 
             // Set S Previous Privilege mode to User.
-            unsafe { sstatus::set_spp(sstatus::SPP::User) };
+            sstatus::set_spp(sstatus::SPP::User);
             // Enable interrupts in user mode.
-            unsafe { sstatus::set_spie() };
+            sstatus::set_spie();
 
             // Set S Exception Program Counter to the saved user pc.
             sepc::write(proc.trap_frame.epc);
 
-            satp = proc.page_table.unwrap().make_satp();
+            satp = match proc.page_table.as_ref() {
+                Some(pt) => {
+                    println!("enable page table: {}", pt);
+                    pt.make_satp()
+                }
+                None => panic!("invalid process"),
+            }
         }
     }
     println!(4);
 
     // Jump to trampoline.S, which switches to the user page table,
     // restores user registers, and switches to user mode with `sret`.
-    unsafe { userret(TRAPFRAME, satp) };
+    let trampoline_userret = TRAMPOLINE + (userret as usize - trampoline as usize);
+    println!("userret: 0x{:x}", trampoline_userret as usize);
+    let userret_virt: extern "C" fn(usize, usize) -> ! =
+        core::mem::transmute(trampoline_userret as usize);
+    userret_virt(TRAPFRAME, satp);
 }
 
 #[no_mangle]

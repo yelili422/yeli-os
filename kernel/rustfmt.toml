@@ -1,4 +1,5 @@
 fn_call_width = 80
-imports_granularity="Crate"
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
 enum_discrim_align_threshold = 20
 struct_field_align_threshold = 20

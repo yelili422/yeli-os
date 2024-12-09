@@ -1,9 +1,27 @@
-use alloc::{collections::BTreeMap, sync::Arc, vec};
+use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec};
+
+use log::{debug, info};
 use spin::RwLock;
 
-use crate::{intr::usertrapret, mem::page::PageTable};
+use super::{State, Task, TaskId, MAX_PROC};
+use crate::{
+    intr::{usertrapret, TrapFrame},
+    proc::{Context, KERNEL_STACK_SIZE},
+};
 
-use super::{State, Task, TaskId, KERNEL_STACK_SIZE, MAX_PROC};
+// a user program that calls exec("/init")
+// assembled from ../user/initcode.S
+// od -t xC ../user/initcode
+#[rustfmt::skip]
+static INITCODE: [u8; 52] = [
+    0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x45, 0x02,
+    0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x35, 0x02,
+    0x93, 0x08, 0x70, 0x00, 0x73, 0x00, 0x00, 0x00,
+    0x93, 0x08, 0x20, 0x00, 0x73, 0x00, 0x00, 0x00,
+    0xef, 0xf0, 0x9f, 0xff, 0x2f, 0x69, 0x6e, 0x69,
+    0x74, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00
+];
 
 pub struct TaskList {
     tasks:   BTreeMap<TaskId, Arc<RwLock<Task>>>,
@@ -33,36 +51,35 @@ impl TaskList {
             panic!("too many processes.")
         }
 
-        let task = Task::new(pid);
+        let kernel_stack = Box::pin([0u8; KERNEL_STACK_SIZE]);
+        let mut trap_frame = TrapFrame::default();
+        // Prepare for the very first "return" form kernel to user.
+        trap_frame.epc = 0; // user program counter
+        trap_frame.sp = kernel_stack.len(); // user stack pointer
+
+        let mut context = Context::default();
+        // Set up new context to start executing at `usertrapret`,
+        // which returns to user space. Since, we set `sp` to kernel
+        // stack temporarily.
+        context.ra = usertrapret as usize;
+        context.sp = kernel_stack.as_ptr() as usize + kernel_stack.len();
+
+        let task = Task {
+            pid,
+            state: State::Init,
+            kernel_stack,
+            context,
+            trap_frame,
+            page_table: None,
+        };
+
         assert!(self
             .tasks
             .insert(pid, Arc::new(RwLock::new(task)))
             .is_none());
+        debug!("proc: allocated new task: {}", pid);
 
         Ok(self.tasks.get(&pid).unwrap())
-    }
-
-    pub fn spawn(&mut self, _func: extern "C" fn()) -> Result<&Arc<RwLock<Task>>, ()> {
-        let task_lock = self.new_task()?;
-        {
-            let mut task = task_lock.write();
-
-            let stack = vec![0; KERNEL_STACK_SIZE].into_boxed_slice();
-
-            // Prepare for the very first "return" form kernel to user.
-            task.trap_frame.epc = 0; // user program counter
-            task.trap_frame.sp = stack.len(); // user stack pointer
-
-            // Set up new context to start executing at `usertrapret`,
-            // which returns to user space. Since, we set `sp` to kernel
-            // stack temporarily.
-            task.context.ra = usertrapret as usize;
-            task.context.sp = stack.as_ptr() as usize + stack.len();
-
-            task.kernel_stack = Some(stack);
-            task.set_user_page_table(PageTable::empty());
-        }
-        Ok(task_lock)
     }
 
     pub fn current(&self) -> Result<&Arc<RwLock<Task>>, ()> {
@@ -71,20 +88,21 @@ impl TaskList {
     }
 
     pub fn user_init(&mut self) {
-        match self.spawn(userspace_init) {
-            Ok(init_task_lock) => {
-                let mut init_task = init_task_lock.write();
-                assert_eq!(init_task.pid, 0, "The first pid is not 0");
+        info!("Initializing the init userspace...");
 
-                init_task.state = State::Runnable;
-            }
-            Err(_) => {
-                panic!("failed to init userspace.");
-            }
+        let task_lock = self.new_task().expect("failed to create init task");
+        {
+            let mut task = task_lock.write();
+            assert_eq!(task.pid, 0, "The first pid is not 0");
+
+            task.init_user_page_table();
+            task.page_table
+                .as_mut()
+                .unwrap()
+                .as_mut()
+                .user_vm_init(&INITCODE);
+
+            task.state = State::Runnable;
         }
     }
-}
-
-pub extern "C" fn userspace_init() {
-    panic!("userspace_init")
 }

@@ -7,8 +7,11 @@
 # linker.ld causes this to be aligned to a page
 # boundary.
 
+.section .text.trampoline_section
+
 .global trampoline
 trampoline:
+
 .align 4
 .global uservec
 uservec:
@@ -69,20 +72,22 @@ uservec:
     # Wait for any previous memory operations to complete, so that
     # they use the user page table. Then, install the kernel page table
     # and flush TLB.
-    sfence.vma  zero, zero
+    # sfence.vma  zero, zero
     csrw        satp, t1
     sfence.vma  zero, zero
 
     # jump to usertrap(), which does not return
     jr  t0
 
+.align 4
 .global userret
 userret:
     # Userret(trapframe, pagetable) called by usertrapret to switch from
     # kernel to user.
 
     # Switch to the user page table.
-    sfence.vma  zero, zero
+    # sfence.vma  zero, zero
+
     csrw    satp, a1
     sfence.vma  zero, zero
 

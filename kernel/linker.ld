@@ -13,6 +13,11 @@ SECTIONS
         *(.text.entry)
 
         . = ALIGN(4096);
+        _trampoline = .;
+        *(.text.trampoline_section)
+
+        . = ALIGN(4096);
+        ASSERT( . - _trampoline == 4096, "trampoline larger then one page.")
         *(.text .text.*)
 
         . = ALIGN(4096);

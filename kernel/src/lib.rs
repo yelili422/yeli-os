@@ -7,10 +7,12 @@
 // the #[no_main] attribute and provide our own entry point.
 #![reexport_test_harness_main = "test_main"]
 #![feature(alloc_error_handler)]
+#![feature(new_zeroed_alloc)]
 
 extern crate alloc;
 
 use core::{arch::global_asm, panic::PanicInfo};
+
 use log::{info, LevelFilter};
 use syscall;
 
@@ -31,7 +33,8 @@ pub fn init() {
     proc::init();
     intr::init();
 
-    // proc::schedule();
+    // info!("Start scheduling...");
+    proc::schedule();
 }
 
 #[cfg(test)]

@@ -1,11 +1,16 @@
-use crate::mem::{address::PhysicalAddress, PAGE_SIZE};
-use buddy_allocator::BuddyAllocator;
+use alloc::boxed::Box;
 use core::{
     alloc::{GlobalAlloc, Layout},
     ptr::{null_mut, NonNull},
 };
+
+use buddy_allocator::BuddyAllocator;
+use log::debug;
 use slab_allocator::{SlabAllocator, MAX_SLAB_ORDER};
 use spin::Mutex;
+
+use super::page::RawPage;
+use crate::mem::{address::PhysicalAddress, PAGE_SIZE};
 
 mod buddy_allocator;
 mod slab_allocator;
@@ -29,7 +34,7 @@ pub struct GlobalAllocator {}
 unsafe impl GlobalAlloc for GlobalAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let order = order(layout.size());
-        if order > MAX_SLAB_ORDER {
+        let result = if order > MAX_SLAB_ORDER {
             let pages = (layout.size() + (PAGE_SIZE - 1)) / PAGE_SIZE;
             FRAME_ALLOCATOR
                 .lock()
@@ -41,7 +46,17 @@ unsafe impl GlobalAlloc for GlobalAllocator {
                 .alloc(order)
                 .map(|ptr| ptr.as_ptr())
                 .unwrap_or(null_mut())
+        };
+        debug!(
+            "global_alloc: layout({}, {}), result: 0x{:x}",
+            layout.size(),
+            layout.align(),
+            result as usize
+        );
+        if !result.is_null() {
+            assert_eq!((result as usize) % layout.align(), 0);
         }
+        result
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
@@ -64,8 +79,16 @@ pub unsafe fn init_allocator(mem_start: PhysicalAddress, mem_end: PhysicalAddres
     FRAME_ALLOCATOR.lock().init(mem_start, mem_end);
 }
 
-pub fn alloc_pages(pages: usize) -> Option<PhysicalAddress> {
-    FRAME_ALLOCATOR.lock().alloc_pages(pages)
+/// FromPage trait allocates a raw page from memory.
+/// The page must be freed manually.
+pub trait FromRawPage: Sized {
+    unsafe fn new_zeroed() -> usize {
+        let boxed_page = Box::<Self>::new_zeroed().assume_init();
+        assert_eq!((&*boxed_page as *const _ as usize) % 4096, 0);
+
+        let ptr = Box::into_raw(boxed_page) as usize;
+        ptr
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

@@ -1,10 +1,11 @@
+use allocator::{init_allocator, FromRawPage};
+use log::info;
+
 use self::{
     address::{as_mut, Address, VirtualAddress, MAX_VA},
     page::{enable_paging, PTEFlags, PageSize, PageTable, Size4KiB},
 };
-use crate::{lp2addr, mem::allocator::alloc_pages, proc::TaskId};
-use allocator::init_allocator;
-use log::debug;
+use crate::{intr::trampoline, lp2addr, proc::TaskId};
 
 pub mod address;
 pub mod allocator;
@@ -21,16 +22,16 @@ pub const KERNEL_BASE: Address = 0x8020_0000;
 pub const MEM_END: Address = 0x8000_0000 + 1024 * 1024 * 128;
 
 /// The address of trampoline.
-pub const TRAMPOLINE: Address = MAX_VA - PAGE_SIZE + 1;
+pub const TRAMPOLINE: Address = MAX_VA - PAGE_SIZE;
 
 /// The address of trap frame.
 pub const TRAPFRAME: Address = TRAMPOLINE - PAGE_SIZE;
 
 /// MMIO base address.
-pub const MMIO_BASE: Address = 0x1000_1000;
+pub const VIRTIO_MMIO_BASE: Address = 0x1000_1000;
 
 /// MMIO length.
-pub const MMIO_LEN: usize = 0x1000;
+pub const VIRTIO_MMIO_LEN: usize = 0x1000;
 
 /// The kernel stack address of this process.
 pub const fn kernel_stack(pid: TaskId) -> VirtualAddress {
@@ -56,13 +57,16 @@ extern "C" {
 
 /// Make a direct map page table for the kernel.
 unsafe fn kvm_make() -> &'static mut PageTable {
-    debug!("page_table: initializing kernel page table...");
+    info!("page_table: initializing kernel page table...");
 
-    let pa = alloc_pages(1).expect("kvm_make: allocate page failed.");
-    let pt = as_mut::<PageTable>(pa);
+    let pt = unsafe {
+        let page = PageTable::new_zeroed();
+        info!("page_table: init page table at 0x{:x}", page);
+        as_mut::<PageTable>(page)
+    };
 
     // map kernel text executable and read-only.
-    debug!("page_table: mapping kernel text section...");
+    info!("page_table: mapping kernel text section...");
     pt.map(
         KERNEL_BASE,
         KERNEL_BASE,
@@ -71,7 +75,7 @@ unsafe fn kvm_make() -> &'static mut PageTable {
     );
 
     // map kernel data and the physical RAM we'll make use of.
-    debug!("page_table: mapping kernel data section...");
+    info!("page_table: mapping kernel data section...");
     pt.map(
         lp2addr!(etext),
         lp2addr!(etext),
@@ -81,7 +85,8 @@ unsafe fn kvm_make() -> &'static mut PageTable {
 
     // Map the trampoline for trap entry/exit to the hightest virtual
     // address in the kernel.
-    // pt.map(TRAMPOLINE, trampoline as usize, PAGE_SIZE, PTEFlags::R | PTEFlags::W);
+    info!("page_table: mapping trampoline...");
+    pt.map(TRAMPOLINE, trampoline as usize, PAGE_SIZE, PTEFlags::R | PTEFlags::X);
 
     // Allocate a page for each process's kernel stack.
     // Map it high in memory, followed by an invalid
@@ -91,17 +96,19 @@ unsafe fn kvm_make() -> &'static mut PageTable {
     //     pt.map(kernel_stack(pid), page, PAGE_SIZE, PTEFlags::R | PTEFlags::W);
     // }
 
-    debug!("page_table: mapping MMIO section...");
-    pt.map(MMIO_BASE, MMIO_BASE, MMIO_LEN, PTEFlags::R | PTEFlags::W);
+    info!("page_table: mapping MMIO section...");
+    pt.map(VIRTIO_MMIO_BASE, VIRTIO_MMIO_BASE, VIRTIO_MMIO_LEN, PTEFlags::R | PTEFlags::W);
 
     pt
 }
 
 pub unsafe fn init() {
+    assert_eq!(size_of::<PageTable>(), PAGE_SIZE);
+
+    info!("Initializing memory...");
     init_allocator(lp2addr!(end), MEM_END);
 
     let kernel_pagetable = kvm_make();
-    enable_paging(kernel_pagetable.make_satp());
-
-    debug!("page_table: initialized.");
+    enable_paging(kernel_pagetable);
+    info!("page_table: initialized.");
 }

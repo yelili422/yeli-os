@@ -1,8 +1,10 @@
-use crate::{mem::PAGE_SIZE, println};
 use core::arch::global_asm;
+
+use log::{debug, info};
 use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 pub use self::{backtrace::*, context::Context, task::*, task_list::*};
+use crate::{mem::PAGE_SIZE, println};
 
 mod backtrace;
 mod context;
@@ -15,10 +17,10 @@ global_asm!(include_str!("switch.S"));
 pub const MAX_PROC: u64 = 64;
 
 /// The default kernel stack size.
-pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE;
+pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 2;
 
 /// The default user stack size.
-pub const USER_STACK_SIZE: usize = PAGE_SIZE;
+pub const USER_STACK_SIZE: usize = PAGE_SIZE * 2;
 
 pub static TASKS: RwLock<TaskList> = RwLock::new(TaskList::new());
 
@@ -34,9 +36,6 @@ extern "C" {
     /// Saves/Restores the registers from `Context` and switches
     /// process to other.
     fn switch_to(old: *mut Context, new: *const Context);
-
-    /// The linker identifier of trampoline section.
-    fn trampoline();
 }
 
 pub fn schedule() -> ! {
@@ -50,13 +49,14 @@ pub fn schedule() -> ! {
         }
     }
 
-    println!(1);
+    info!("switching to next process...");
     unsafe { switch_to(&mut Context::default(), init_proc_context) }
 
     panic!("unreachable.")
 }
 
 pub fn init() {
+    info!("Initializing processes...");
     {
         let mut tasks = tasks_mut();
         tasks.user_init();

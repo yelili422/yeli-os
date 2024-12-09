@@ -1,15 +1,15 @@
 use alloc::boxed::Box;
+use core::pin::Pin;
 
+use super::Context;
 use crate::{
-    intr::TrapFrame,
+    intr::{trampoline, TrapFrame},
     mem::{
         page::{PTEFlags, PageTable},
         PAGE_SIZE, TRAMPOLINE, TRAPFRAME,
     },
     va2pa,
 };
-
-use super::{trampoline, Context};
 
 pub type TaskId = u64;
 
@@ -18,25 +18,15 @@ pub struct Task {
     pub state:        State,
     /// The kernel stack is part of the kernel space. Hence,
     /// it is not directly accessible from a user process.
-    pub kernel_stack: Option<Box<[u8]>>,
+    pub kernel_stack: Pin<Box<[u8]>>,
     pub context:      Context,
     pub trap_frame:   TrapFrame,
-    pub page_table:   Option<PageTable>,
+    pub page_table:   Option<Pin<Box<PageTable>>>,
 }
 
 impl Task {
-    pub fn new(pid: TaskId) -> Self {
-        Task {
-            pid,
-            state: State::Blocked,
-            kernel_stack: None,
-            context: Context::default(),
-            trap_frame: TrapFrame::default(),
-            page_table: None,
-        }
-    }
-
-    pub fn set_user_page_table(&mut self, mut page_table: PageTable) {
+    pub fn init_user_page_table(&mut self) {
+        let mut page_table = Box::pin(PageTable::empty());
         unsafe {
             // Map trampoline code (for system call return) at the hightest
             // user virtual address. Only the supervisor uses it, on the
@@ -63,6 +53,7 @@ impl Task {
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum State {
+    Init,
     Sleeping,
     Runnable,
     Running,

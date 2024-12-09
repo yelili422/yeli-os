@@ -1,25 +1,17 @@
-/// In this kernel, interrupts/exceptions will be processed below:
-/// - syscalls or exceptions from applications of `U` privileged level
-/// will be processed by kernel in `S` privileged level.
-/// - timer, software, and external interrupts from 'S' privileged level
-/// will be process by kernel in `S` privileged level.
-///
-/// When a interrupt occurs, the same level interrupts will be blocked
-/// by default. The hardware will:
-/// - Save `sstatus.sie` to `sstatus.spie`, set `sstatus.sie` to 0.
-/// It blocks the same levels interrupts.
-/// - Restore `sstatus.sie` from `sstatus.spie` after handing interrupt
-/// and call `sret` to back to the instruction where interrupted.
-use core::{arch::global_asm, panic};
+use core::arch::global_asm;
 
-use riscv::register::{
-    scause::{self, Interrupt, Trap},
-    sie, sstatus,
-    stvec::{self, TrapMode},
+use log::info;
+use riscv::{
+    interrupt::supervisor::Interrupt,
+    register::{
+        scause::{self, Trap},
+        sie, sstatus,
+        stvec::{self, TrapMode},
+    },
+    InterruptNumber,
 };
 
 use self::timer::{set_next_timer, tick};
-
 pub use self::trap::{usertrapret, TrapFrame};
 
 mod timer;
@@ -31,7 +23,7 @@ global_asm!(include_str!("kernelvec.S"));
 
 extern "C" {
     /// The linker identifier of trampoline section.
-    fn trampoline();
+    pub fn trampoline();
 
     /// The linker identifier of `uservec`.
     fn uservec();
@@ -46,13 +38,16 @@ extern "C" {
 /// Handles all traps from user or kernel process.
 pub fn handle(cause: scause::Scause, _context: &mut TrapFrame) {
     match cause.cause() {
-        Trap::Exception(_) => unimplemented!(),
-        Trap::Interrupt(Interrupt::SupervisorTimer) => tick(),
-        _ => panic!(),
+        Trap::Exception(_expt) => unimplemented!(),
+        Trap::Interrupt(intr) => match Interrupt::from_number(intr).unwrap() {
+            Interrupt::SupervisorTimer => tick(),
+            _ => unimplemented!(),
+        },
     }
 }
 
 pub fn init() {
+    info!("Initializing interrupt handlers...");
     // set kernel interrupt handler.
     unsafe { stvec::write(kernelvec as usize, TrapMode::Direct) };
 
