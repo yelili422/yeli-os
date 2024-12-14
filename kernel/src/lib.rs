@@ -13,10 +13,14 @@ extern crate alloc;
 
 use core::{arch::global_asm, panic::PanicInfo};
 
+use drivers::virtio::virtio_blk::VirtIOBlock;
+use fs::block_dev::{self, BLOCK_SIZE};
 use log::{info, LevelFilter};
+use mem::VIRTIO_MMIO_BASE;
 use syscall;
 
 pub mod console;
+mod drivers;
 pub mod intr;
 pub mod logger;
 pub mod mem;
@@ -34,7 +38,27 @@ pub fn init() {
     intr::init();
 
     // info!("Start scheduling...");
-    proc::schedule();
+    // proc::schedule();
+
+    match VirtIOBlock::new(VIRTIO_MMIO_BASE) {
+        Ok(mut block_dev) => {
+            let block_id = 0x8000 / BLOCK_SIZE as u64;
+
+            let mut buf = [0u8; BLOCK_SIZE];
+            block_dev
+                .read_block(block_id, &mut buf)
+                .expect("block device read error");
+            for bytes in buf.chunks(16) {
+                for byte in bytes {
+                    print!("{:02x}", byte);
+                }
+                println!(" ");
+            }
+        }
+        Err(err) => {
+            panic!("{}", err)
+        }
+    }
 }
 
 #[cfg(test)]

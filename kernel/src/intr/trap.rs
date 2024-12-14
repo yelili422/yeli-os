@@ -1,4 +1,3 @@
-use log::debug;
 use riscv::register::{scause, sepc, sstatus, stvec};
 
 use super::handle;

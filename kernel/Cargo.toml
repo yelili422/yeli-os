@@ -23,4 +23,4 @@ bitflags = "2.0.2"
 bit_field = "0.10.1"
 dtb = "0.2.0"
 
-fs = { version = "0.1.0", path = "../fs" }
+fs = { version = "*", path = "../fs" }
