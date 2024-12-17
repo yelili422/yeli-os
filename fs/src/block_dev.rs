@@ -1,6 +1,6 @@
 use core::mem::size_of;
 
-use alloc::sync::Arc;
+use alloc::{string::String, sync::Arc};
 use log::debug;
 use spin::Mutex;
 
@@ -10,8 +10,8 @@ use crate::block_cache::BlockCacheBuffer;
 ///
 /// Blocks devices only support random read and write by block.
 pub trait BlockDevice: Send + Sync {
-    fn read(&self, block_id: u64, buf: &mut [u8]);
-    fn write(&self, block_id: u64, buf: &[u8]);
+    fn read(&self, block_id: u64, buf: &mut [u8]) -> Result<(), String>;
+    fn write(&self, block_id: u64, buf: &[u8]) -> Result<(), String>;
 }
 
 /// The size of one block.

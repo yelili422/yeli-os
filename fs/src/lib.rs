@@ -5,6 +5,7 @@ extern crate alloc;
 use alloc::{
     string::{String, ToString},
     sync::Arc,
+    vec::Vec,
 };
 use block_cache::{BlockCacheBuffer, BLOCK_BUFFER_SIZE};
 use block_dev::{
@@ -18,7 +19,7 @@ use core::{
     slice::{from_raw_parts, from_raw_parts_mut},
 };
 use inode::{Inode, InodeCacheBuffer, InodeNotExists, INODE_BUFFER_SIZE};
-use log::{debug, warn};
+use log::{debug, trace, warn};
 use spin::{Mutex, MutexGuard};
 
 pub mod block_cache;
@@ -29,12 +30,12 @@ pub mod inode;
 pub const SUPER_BLOCK_LOC: u64 = 1;
 
 pub struct FileSystem {
-    dev:         Arc<dyn BlockDevice>,
+    dev: Arc<dyn BlockDevice>,
     // A copy of super block in memory.
     // We can't edit the data in super block on disk during the
     // file system running except when it creating. Therefor,
     // we can use it safely.
-    pub sb:      Arc<SuperBlock>,
+    pub sb: Arc<SuperBlock>,
     // Synchronize access to disk blocks to ensure that only one
     // copy of a block in memory and that only one kernel thread
     // at a time use that copy.
@@ -128,8 +129,8 @@ impl FileSystem {
             .read(0, |super_block: &SuperBlock| {
                 if super_block.is_valid() || !validate {
                     Ok(Arc::new(Self {
-                        dev:         dev.clone(),
-                        sb:          Arc::new(super_block.clone()),
+                        dev: dev.clone(),
+                        sb: Arc::new(super_block.clone()),
                         block_cache: block_cache.clone(),
                         inode_cache: inode_cache.clone(),
                     }))
@@ -223,7 +224,10 @@ impl FileSystem {
         match self.allocate_bmap(self.sb.data_bmap_start, self.sb.data_start) {
             Some(allocate_id) => {
                 if allocate_id >= self.sb.data_blocks {
-                    warn!("fs: allocate_id exceeds the range of data blocks. {}", allocate_id);
+                    warn!(
+                        "fs: allocate_id exceeds the range of data blocks. {}",
+                        allocate_id
+                    );
                     None
                 } else {
                     Some(self.sb.data_start + allocate_id)
@@ -253,7 +257,10 @@ impl FileSystem {
     }
 
     pub fn max_blocks_num(self: &Arc<Self>) -> u64 {
-        min(self.sb.data_blocks, self.sb.inode_blocks * MAX_BLOCKS_PER_INODE as u64)
+        min(
+            self.sb.data_blocks,
+            self.sb.inode_blocks * MAX_BLOCKS_PER_INODE as u64,
+        )
     }
 
     /// Gets the root inode.
@@ -304,7 +311,11 @@ impl FileSystem {
         inode: &MutexGuard<Inode>,
         name: &str,
     ) -> Option<Arc<Mutex<Inode>>> {
-        assert_eq!(inode.type_, InodeType::Directory, "Only directories can look up files.");
+        assert_eq!(
+            inode.type_,
+            InodeType::Directory,
+            "Only directories can look up files."
+        );
 
         let files_num = inode.size() / DIR_ENTRY_SIZE;
         let dirent = &mut DirEntry::empty();
@@ -329,6 +340,30 @@ impl FileSystem {
         None
     }
 
+    pub fn list_children(self: &Arc<Self>, inode: &MutexGuard<Inode>) -> Vec<String> {
+        assert_eq!(
+            inode.type_,
+            InodeType::Directory,
+            "Only directories can list children."
+        );
+
+        let files_num = inode.size() / DIR_ENTRY_SIZE;
+        let mut ret = Vec::new();
+        let dirent = &mut DirEntry::empty();
+
+        for i in 0..files_num {
+            let read_size = self.read_inode(&inode, DIR_ENTRY_SIZE * i, unsafe {
+                from_raw_parts_mut(dirent as *mut _ as *mut u8, DIR_ENTRY_SIZE)
+            });
+
+            assert_eq!(read_size, DIR_ENTRY_SIZE);
+
+            ret.push(dirent.name().to_string());
+        }
+
+        ret
+    }
+
     /// Creates a new empty inode under this inode directory.
     pub fn create_inode(
         self: &Arc<Self>,
@@ -342,8 +377,15 @@ impl FileSystem {
             "New files only can be created in directories."
         );
 
+        if !name.is_empty() && name.starts_with("/") {
+            return Err(FileSystemAllocationError::InvalidName(name.to_string()));
+        }
+
         if let Some(_) = self.look_up(inode, name) {
-            return Err(FileSystemAllocationError::AlreadyExist(name.to_string(), type_));
+            return Err(FileSystemAllocationError::AlreadyExist(
+                name.to_string(),
+                type_,
+            ));
         }
 
         let new_inode_lock = self
@@ -458,6 +500,7 @@ impl FileSystem {
         }
 
         while let Some((name, next_path)) = skip(path) {
+            trace!("get_inode_from_path: name: {}, path: {}", name, next_path);
             let ip = start_at.lock();
             if ip.type_ != InodeType::Directory {
                 return None;
@@ -487,6 +530,7 @@ pub enum FileSystemAllocationError {
     InodeExhausted,
     AlreadyExist(String, InodeType),
     TooLarge(usize),
+    InvalidName(String),
 }
 
 fn clear_block(bid: BlockId, fs: Arc<FileSystem>) {
@@ -535,6 +579,10 @@ fn skip(path: &str) -> Option<(&str, &str)> {
     }
 
     Some((&path[name_start..name_start + len], &path[p..]))
+}
+
+pub fn calc_blocks_num(total_bytes: u64) -> u64 {
+    (total_bytes + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64
 }
 
 #[cfg(test)]

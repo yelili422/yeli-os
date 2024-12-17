@@ -7,8 +7,5 @@ rustflags = [
     "-Clink-arg=-Tlinker.ld",
 ]
 
-[target.'cfg(target_os = "none")']
-runner = "make run"
-
 [unstable]
 build-std = ["core", "compiler_builtins", "alloc"]

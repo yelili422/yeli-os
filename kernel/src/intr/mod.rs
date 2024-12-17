@@ -1,19 +1,21 @@
-use core::arch::global_asm;
+use core::arch::{asm, global_asm};
 
 use log::info;
+use plic::{handle_plic, plic_init};
 use riscv::{
-    interrupt::supervisor::Interrupt,
+    interrupt::{supervisor::Interrupt, Exception},
     register::{
         scause::{self, Trap},
-        sie, sstatus,
+        sie, sstatus, stval,
         stvec::{self, TrapMode},
     },
-    InterruptNumber,
+    ExceptionNumber, InterruptNumber,
 };
 
 use self::timer::{set_next_timer, tick};
 pub use self::trap::{usertrapret, TrapFrame};
 
+pub mod plic;
 mod timer;
 mod trap;
 
@@ -36,25 +38,79 @@ extern "C" {
 }
 
 /// Handles all traps from user or kernel process.
-pub fn handle(cause: scause::Scause, _context: &mut TrapFrame) {
+pub unsafe fn handle(cause: scause::Scause, context: &mut TrapFrame) {
+    disable_supervisor_external_interrupt();
+    disable_supervisor_interrupt();
+
+    let stval = stval::read();
     match cause.cause() {
-        Trap::Exception(_expt) => unimplemented!(),
-        Trap::Interrupt(intr) => match Interrupt::from_number(intr).unwrap() {
-            Interrupt::SupervisorTimer => tick(),
-            _ => unimplemented!(),
+        Trap::Exception(exception) => match Exception::from_number(exception) {
+            Err(err) => panic!("{}", err),
+            Ok(Exception::LoadPageFault) | Ok(Exception::StorePageFault) => {
+                panic!("pagefault: bad addr = {:#x}, instruction = {:#x}", stval, context.epc,);
+            }
+            Ok(e) => unimplemented!("{:?}", e),
+        },
+        Trap::Interrupt(intr) => match Interrupt::from_number(intr) {
+            Err(err) => panic!("{}", err),
+            Ok(Interrupt::SupervisorTimer) => tick(),
+            Ok(Interrupt::SupervisorExternal) => handle_plic(),
+            Ok(e) => unimplemented!("{:?}", e),
         },
     }
+
+    enable_supervisor_interrupt();
+    enable_supervisor_external_interrupt();
 }
 
 pub fn init() {
     info!("Initializing interrupt handlers...");
-    // set kernel interrupt handler.
-    unsafe { stvec::write(kernelvec as usize, TrapMode::Direct) };
 
-    // enable timer interrupt.
     unsafe {
+        // set kernel interrupt handler.
+        stvec::write(kernelvec as usize, TrapMode::Direct);
+
+        // enable timer interrupt.
         sie::set_stimer();
-        sstatus::set_sie();
+
+        // enable PLIC interrupts
+        plic_init();
+
+        enable_supervisor_interrupt();
+        enable_supervisor_external_interrupt();
     }
     set_next_timer();
+}
+
+#[inline(always)]
+pub fn cpu_id() -> usize {
+    // let id: usize;
+    // unsafe { asm!("mv {}, tp", out(reg) id) };
+    // id
+    0
+}
+
+#[inline(always)]
+pub fn set_cpu_id(id: usize) {
+    unsafe { asm!("mv tp, {}", in(reg) id) };
+}
+
+#[inline(always)]
+unsafe fn disable_supervisor_interrupt() {
+    sstatus::clear_sie();
+}
+
+#[inline(always)]
+unsafe fn enable_supervisor_interrupt() {
+    sstatus::set_sie();
+}
+
+#[inline(always)]
+unsafe fn enable_supervisor_external_interrupt() {
+    sie::set_sext();
+}
+
+#[inline(always)]
+unsafe fn disable_supervisor_external_interrupt() {
+    sie::clear_sext();
 }

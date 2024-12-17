@@ -77,5 +77,5 @@ kernelvec:
 
     addi    sp, sp, 256
 
-    // return to whaterver we ware doing in the kernel.
+    // return to whatever we ware doing in the kernel.
     sret

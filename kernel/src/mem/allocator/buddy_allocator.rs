@@ -121,7 +121,7 @@ impl FrameAllocator for BuddyAllocator {
             .and_then(|o| self.split_block(o, order));
 
         block_opt.map(|block| {
-            debug!(
+            trace!(
                 "buddy_allocator: alloc {} pages: 0x{:x} - 0x{:x}",
                 pages,
                 block.as_ptr() as usize,
@@ -132,7 +132,7 @@ impl FrameAllocator for BuddyAllocator {
     }
 
     fn free_pages(&mut self, addr: usize, mut pages: usize) {
-        debug!("buddy_allocator: dealloc {} pages from 0x{:x}", pages, addr);
+        trace!("buddy_allocator: dealloc {} pages from 0x{:x}", pages, addr);
         if pages == 0 || pages > (1 << (MAX_ORDER - 1)) {
             return;
         }

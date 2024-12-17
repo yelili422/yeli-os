@@ -40,3 +40,17 @@ macro_rules! println {
         $crate::console::_print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?));
     }
 }
+
+pub struct HexDump<'a>(pub &'a [u8]);
+
+impl<'a> fmt::Display for HexDump<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for chunk in self.0.chunks(16) {
+            for byte in chunk {
+                write!(f, "{:02X} ", byte)?;
+            }
+            writeln!(f)?;
+        }
+        Ok(())
+    }
+}

@@ -4,6 +4,7 @@ use alloc::boxed::Box;
 use core::ptr::NonNull;
 
 use bitflags::bitflags;
+use virtio_blk::VIRTIO_BLK_DEVICES;
 
 use super::{ReadOnly, ReadWrite, Volatile, WriteOnly};
 
@@ -17,12 +18,57 @@ const QUEUE_SIZE: usize = 16;
 /// Same as [VirtIORegs::config]
 const CONFIG_SPACE_OFFSET: usize = 0x100;
 
-enum VirtIOBlockReqType {
-    Read  = 0,
-    Write = 1,
+/// Virtio device type
+///
+/// see spec.5
+#[allow(unused)]
+#[derive(Debug)]
+pub enum VirtIODeviceType {
+    Reserved         = 0,            // Reserved (invalid)
+    NetworkCard      = 1,            // Network card
+    BlockDevice      = 2,            // Block device
+    Console          = 3,            // Console
+    EntropySource    = 4,            // Entropy source
+    MemoryBallooningTraditional = 5, // Memory ballooning (traditional)
+    IoMemory         = 6,            // I/O Memory
+    Rpmsg            = 7,            // RPMsg
+    ScsiHost         = 8,            // SCSI host
+    Transport9P      = 9,            // 9P transport
+    Mac80211Wlan     = 10,           // mac80211 WLAN
+    RprocSerial      = 11,           // Remote processor serial
+    VirtioCaif       = 12,           // Virtio CAIF
+    MemoryBalloon    = 13,           // Memory balloon
+    GpuDevice        = 16,           // GPU device
+    TimerClockDevice = 17,           // Timer/Clock device
+    InputDevice      = 18,           // Input device
+    SocketDevice     = 19,           // Socket device
+    CryptoDevice     = 20,           // Crypto device
+    SignalDistributionModule = 21,   // Signal Distribution Module
+    PstoreDevice     = 22,           // Persistent storage device
+    IommuDevice      = 23,           // IOMMU device
+    MemoryDevice     = 24,           // Memory device
 }
 
 bitflags! {
+    /// device feature bits
+    struct VirtIOFeatures: u32 {
+        const BLK_F_RO = 1 << 5;	/* Disk is read-only */
+        const BLK_F_SCSI = 1 << 7;	/* Supports scsi command passthru */
+        const BLK_F_CONFIG_WCE = 1 << 11;	/* Writeback mode available in config */
+        const BLK_F_MQ = 1 << 12;	/* support more than one vq */
+        const F_ANY_LAYOUT = 1 << 27;
+        const RING_F_INDIRECT_DESC = 1 << 28;
+        const RING_F_EVENT_IDX = 1 << 29;
+    }
+
+    /// status register bits, from qemu virtio_config.h
+    struct VirtIOStatus: u32 {
+        const ACKNOWLEDGE = 1;
+        const DRIVER = 	2;
+        const DRIVER_OK = 4;
+        const FEATURES_OK = 8;
+    }
+
     struct VirtqDescFlags: u16 {
         const NEXT = 1;
         const WRITE = 2;
@@ -30,6 +76,7 @@ bitflags! {
 }
 
 #[rustfmt::skip]
+#[allow(unused)]
 #[repr(C)]
 pub struct VirtIORegs {
     /* 0x000 */ magic:               ReadOnly<u32>, // Magic value 0x74726976 ("virt")
@@ -170,4 +217,44 @@ struct VirtqUsed {
 struct VirtqUsedElem {
     id:  Volatile<u32>, // first descriptor index of chain
     len: Volatile<u32>, // wrote bytes
+}
+
+#[derive(Debug)]
+pub enum VirtIOInitError {
+    /// Invalid magic number 0x74726976
+    InvalidMagic(u32),
+
+    /// Invalid or unsupported virtio version.
+    InvalidVersion(u32),
+}
+
+#[derive(Debug)]
+pub enum VirtIOError {
+    /// Buffer size must be BLOCK_SIZE bytes.
+    InvalidBufferSize(usize),
+
+    /// Read/Write request beyond capacity.
+    OutOfCapacity(u64),
+}
+
+impl core::fmt::Display for VirtIOError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            VirtIOError::InvalidBufferSize(len) => write!(f, "Invalid buffer size: {}", len),
+            VirtIOError::OutOfCapacity(sector) => write!(f, "Out of capacity: {}", sector),
+        }
+    }
+}
+
+pub fn handle_virtio_interrupt() {
+    // SAFETY: interrupt handler guarantee that only one thread running this
+    // function at the same time
+    #[allow(static_mut_refs)]
+    for device in unsafe { VIRTIO_BLK_DEVICES.iter_mut() } {
+        if let Some(block_dev) = device {
+            if let Some(block_dev) = block_dev.upgrade() {
+                block_dev.handle_interrupt();
+            }
+        }
+    }
 }

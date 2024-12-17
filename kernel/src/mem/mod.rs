@@ -33,6 +33,9 @@ pub const VIRTIO_MMIO_BASE: Address = 0x1000_1000;
 /// MMIO length.
 pub const VIRTIO_MMIO_LEN: usize = 0x1000;
 
+/// riscv default PLIC(Platform-Level Interrupt Controller) base address.
+pub const PLIC_BASE: usize = 0x0C00_0000;
+
 /// The kernel stack address of this process.
 pub const fn kernel_stack(pid: TaskId) -> VirtualAddress {
     TRAMPOLINE - (pid as usize + 1) * 2 * PAGE_SIZE
@@ -86,18 +89,18 @@ unsafe fn kvm_make() -> &'static mut PageTable {
     // Map the trampoline for trap entry/exit to the hightest virtual
     // address in the kernel.
     info!("page_table: mapping trampoline...");
-    pt.map(TRAMPOLINE, trampoline as usize, PAGE_SIZE, PTEFlags::R | PTEFlags::X);
-
-    // Allocate a page for each process's kernel stack.
-    // Map it high in memory, followed by an invalid
-    // guard page.
-    // for pid in 0..MAX_PROC {
-    //     let page = alloc_one_page().expect("kvm_make: allocate kernel stack failed.");
-    //     pt.map(kernel_stack(pid), page, PAGE_SIZE, PTEFlags::R | PTEFlags::W);
-    // }
+    pt.map(
+        TRAMPOLINE,
+        trampoline as usize,
+        PAGE_SIZE,
+        PTEFlags::R | PTEFlags::X | PTEFlags::G,
+    );
 
     info!("page_table: mapping MMIO section...");
     pt.map(VIRTIO_MMIO_BASE, VIRTIO_MMIO_BASE, VIRTIO_MMIO_LEN, PTEFlags::R | PTEFlags::W);
+
+    info!("page_table: mapping PLIC section...");
+    pt.map(PLIC_BASE, PLIC_BASE, 0x4_000_000, PTEFlags::R | PTEFlags::W | PTEFlags::G);
 
     pt
 }

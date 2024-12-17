@@ -5,11 +5,10 @@ use core::{
 };
 
 use buddy_allocator::BuddyAllocator;
-use log::debug;
+use log::trace;
 use slab_allocator::{SlabAllocator, MAX_SLAB_ORDER};
 use spin::Mutex;
 
-use super::page::RawPage;
 use crate::mem::{address::PhysicalAddress, PAGE_SIZE};
 
 mod buddy_allocator;
@@ -47,7 +46,7 @@ unsafe impl GlobalAlloc for GlobalAllocator {
                 .map(|ptr| ptr.as_ptr())
                 .unwrap_or(null_mut())
         };
-        debug!(
+        trace!(
             "global_alloc: layout({}, {}), result: 0x{:x}",
             layout.size(),
             layout.align(),

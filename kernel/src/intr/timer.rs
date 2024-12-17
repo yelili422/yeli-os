@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use log::trace;
+use log::debug;
 use riscv::register::time;
 
 use crate::syscall::set_timer;
@@ -17,6 +17,6 @@ pub fn tick() {
     set_next_timer();
     TICKS.fetch_add(1, Ordering::Relaxed);
     if TICKS.load(Ordering::Relaxed) % 100 == 0 {
-        trace!("ticks: {}", TICKS.load(Ordering::Relaxed));
+        debug!("ticks: {}", TICKS.load(Ordering::Relaxed));
     }
 }

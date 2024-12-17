@@ -11,12 +11,15 @@
 
 extern crate alloc;
 
+use alloc::sync::Arc;
 use core::{arch::global_asm, panic::PanicInfo};
 
+use console::HexDump;
 use drivers::virtio::virtio_blk::VirtIOBlock;
-use fs::block_dev::{self, BLOCK_SIZE};
+use fs::FileSystem;
 use log::{info, LevelFilter};
 use mem::VIRTIO_MMIO_BASE;
+use sync::once_cell::OnceCell;
 use syscall;
 
 pub mod console;
@@ -25,48 +28,74 @@ pub mod intr;
 pub mod logger;
 pub mod mem;
 pub mod proc;
+mod sync;
 
 // The entry point for this OS
 global_asm!(include_str!("boot/entry.S"));
 
-pub fn init() {
+pub fn init(hart_id: usize, _dtb_addr: usize) {
     logger::init(LevelFilter::Debug).expect("logger init failed.");
+    info!("Running on hart {}.", hart_id);
     info!("Initializing the system...");
 
+    // match unsafe { dtb::Reader::read_from_address(dtb_addr) } {
+    //     Ok(reader) => {
+    //         let root = reader.struct_items();
+    //         let (prop, _) = root.path_struct_items("/soc/plic").next().unwrap();
+    //         println!("property: {:?}, {:?}", prop.name(), prop.unit_address());
+    //     }
+    //     Err(err) => {
+    //         panic!("{:?}", err)
+    //     }
+    // }
+
     unsafe { mem::init() };
+    init_fs();
     proc::init();
     intr::init();
 
     // info!("Start scheduling...");
     // proc::schedule();
+}
 
-    match VirtIOBlock::new(VIRTIO_MMIO_BASE) {
-        Ok(mut block_dev) => {
-            let block_id = 0x8000 / BLOCK_SIZE as u64;
+fn init_fs() {
+    match VirtIOBlock::init(VIRTIO_MMIO_BASE) {
+        Ok(dev) => {
+            let fs = FileSystem::open(dev, true).expect("failed to open file system");
 
-            let mut buf = [0u8; BLOCK_SIZE];
-            block_dev
-                .read_block(block_id, &mut buf)
-                .expect("block device read error");
-            for bytes in buf.chunks(16) {
-                for byte in bytes {
-                    print!("{:02x}", byte);
+            let bin_file = fs
+                .get_inode_from_path("/bin/hello", &fs.root())
+                .expect("failed to open file");
+            let bin_file_guard = bin_file.lock();
+            {
+                let mut buf = [0u8; 4096];
+                let mut offset = 0;
+                loop {
+                    let size = fs.read_inode(&bin_file_guard, offset, &mut buf);
+                    println!("{}", HexDump(&buf[0..size]));
+
+                    if size != buf.len() {
+                        break;
+                    }
+
+                    offset += size;
                 }
-                println!(" ");
             }
+
+            _ = ROOT_FS.set(fs);
         }
-        Err(err) => {
-            panic!("{}", err)
-        }
+        Err(err) => panic!("{:?}", err),
     }
 }
 
+static ROOT_FS: OnceCell<Arc<FileSystem>> = OnceCell::new();
+
 #[cfg(test)]
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub extern "C" fn _start(hart_id: usize, dtb_addr: usize) -> ! {
     use crate::syscall::shutdown;
 
-    init();
+    init(hart_id, dtb_addr);
     test_main();
 
     info!("It did not crash!");

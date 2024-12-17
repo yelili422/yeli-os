@@ -213,9 +213,10 @@ impl PageTable {
                 }
                 let pa = unsafe { PageTable::new_zeroed() };
                 page_table[px(level, va)] = PTE::new(pa, PTEFlags::V);
-                debug!(
+                trace!(
                     "page_table_walk: check pte: {}, level: {}, invalid. create one",
-                    pte, level
+                    pte,
+                    level
                 );
                 page_table = unsafe { as_mut(pa2va!(pa)) };
             }

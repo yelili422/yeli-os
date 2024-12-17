@@ -13,18 +13,20 @@ extern crate std;
 pub struct BlockFile(pub Mutex<std::fs::File>);
 
 impl BlockDevice for BlockFile {
-    fn read(&self, block_id: u64, buf: &mut [u8]) {
+    fn read(&self, block_id: u64, buf: &mut [u8])  -> Result<(), String>  {
         let mut file = self.0.lock();
         file.seek(SeekFrom::Start(block_id * BLOCK_SIZE as u64))
             .unwrap();
         assert_eq!(file.read(buf).unwrap(), BLOCK_SIZE);
+        Ok(())
     }
 
-    fn write(&self, block_id: u64, buf: &[u8]) {
+    fn write(&self, block_id: u64, buf: &[u8]) -> Result<(), String>  {
         let mut file = self.0.lock();
         file.seek(SeekFrom::Start(block_id * BLOCK_SIZE as u64))
             .unwrap();
         assert_eq!(file.write(buf).unwrap(), BLOCK_SIZE);
+        Ok(())
     }
 }
 

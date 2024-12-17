@@ -147,6 +147,8 @@ impl BlockCacheBuffer {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::String;
+
     #[allow(unused_imports)]
     use super::*;
 
@@ -163,11 +165,14 @@ mod tests {
     }
 
     impl BlockDevice for MockBlockDevice {
-        fn read(&self, _block_id: BlockId, buf: &mut [u8]) {
+        fn read(&self, _block_id: BlockId, buf: &mut [u8])  -> Result<(), String>  {
             buf.copy_from_slice(&self.data);
+            Ok(())
         }
 
-        fn write(&self, _block_id: BlockId, _buf: &[u8]) {}
+        fn write(&self, _block_id: BlockId, _buf: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
     }
 
     #[test]

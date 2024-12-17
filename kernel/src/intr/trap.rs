@@ -2,7 +2,7 @@ use riscv::register::{scause, sepc, sstatus, stvec};
 
 use super::handle;
 use crate::{
-    intr::{trampoline, userret, uservec},
+    intr::{disable_supervisor_interrupt, trampoline, userret, uservec},
     mem::{TRAMPOLINE, TRAPFRAME},
     println,
     proc::TASKS,
@@ -59,19 +59,17 @@ pub fn usertrap() {
     // TODO:
     // stvec::write(kernelvec)
 
+    let tasks = TASKS.write();
+    let proc = tasks
+        .current()
+        .expect("usertrap: failed to get current process");
     {
-        let lock = TASKS.write();
-        let proc = lock
-            .current()
-            .expect("usertrap: failed to get current process");
-        {
-            let mut proc_lock = proc.write();
+        let mut proc_lock = proc.write();
 
-            // Save user program counter.
-            proc_lock.trap_frame.epc = sepc::read();
+        // Save user program counter.
+        proc_lock.trap_frame.epc = sepc::read();
 
-            handle(scause::read(), &mut proc_lock.trap_frame);
-        }
+        unsafe { handle(scause::read(), &mut proc_lock.trap_frame) };
     }
 }
 
@@ -86,7 +84,7 @@ pub unsafe fn usertrapret() {
         // We're about to switch the destination of traps from `kerneltrap()`
         // to `usertrap()`, so turn off interrupts until we're back in
         // user space, where `usertrap()` is correct.
-        sstatus::clear_sie();
+        disable_supervisor_interrupt();
 
         // Send syscalls, interrupts, and exceptions to trampoline.S
         let entry = TRAMPOLINE + (uservec as usize - trampoline as usize);
@@ -142,15 +140,13 @@ pub unsafe fn usertrapret() {
 
 #[no_mangle]
 pub fn kerneltrap() {
+    let lock = TASKS.write();
+    let proc = lock
+        .current()
+        .expect("usertrap: failed to get current process");
     {
-        let lock = TASKS.write();
-        let proc = lock
-            .current()
-            .expect("usertrap: failed to get current process");
-        {
-            let mut proc_lock = proc.write();
+        let mut proc_lock = proc.write();
 
-            handle(scause::read(), &mut proc_lock.trap_frame);
-        }
+        unsafe { handle(scause::read(), &mut proc_lock.trap_frame) };
     }
 }
