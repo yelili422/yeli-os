@@ -1,15 +1,17 @@
+use core::fmt;
+
+use log::{debug, trace};
 use riscv::register::{scause, sepc, sstatus, stvec};
 
-use super::handle;
+use super::{handle, kernelvec};
 use crate::{
-    intr::{disable_supervisor_interrupt, trampoline, userret, uservec},
-    mem::{TRAMPOLINE, TRAPFRAME},
-    println,
-    proc::TASKS,
+    intr::{disable_interrupt, trampoline, userret, uservec},
+    mem::{allocator::FromRawPage, page::current_page_table, TRAMPOLINE, TRAP_FRAME},
+    proc::current_proc,
 };
 
-#[repr(C)]
 #[derive(Default)]
+#[repr(C, align(4096))]
 pub struct TrapFrame {
     /*   0 */ pub kernel_satp:   usize, // kernel page table
     /*   8 */ pub kernel_sp:     usize, // top of process's kernel stack
@@ -47,30 +49,70 @@ pub struct TrapFrame {
     /* 264 */ pub t4:            usize,
     /* 272 */ pub t5:            usize,
     /* 280 */ pub t6:            usize,
+    pub padding:       [usize; 26],
+}
+
+impl FromRawPage for TrapFrame {}
+
+impl fmt::Display for TrapFrame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TrapFrame {{\n")?;
+        write!(f, "  kernel_satp:   {:#x}\n", self.kernel_satp)?;
+        write!(f, "  kernel_sp:     {:#x}\n", self.kernel_sp)?;
+        write!(f, "  kernel_trap:   {:#x}\n", self.kernel_trap)?;
+        write!(f, "  epc:           {:#x}\n", self.epc)?;
+        write!(f, "  kernel_hartid: {:#x}\n", self.kernel_hartid)?;
+        write!(f, "  ra:            {:#x}\n", self.ra)?;
+        write!(f, "  sp:            {:#x}\n", self.sp)?;
+        write!(f, "  gp:            {:#x}\n", self.gp)?;
+        write!(f, "  tp:            {:#x}\n", self.tp)?;
+        write!(f, "  t0:            {:#x}\n", self.t0)?;
+        write!(f, "  t1:            {:#x}\n", self.t1)?;
+        write!(f, "  t2:            {:#x}\n", self.t2)?;
+        write!(f, "  s0:            {:#x}\n", self.s0)?;
+        write!(f, "  s1:            {:#x}\n", self.s1)?;
+        write!(f, "  a0:            {:#x}\n", self.a0)?;
+        write!(f, "  a1:            {:#x}\n", self.a1)?;
+        write!(f, "  a2:            {:#x}\n", self.a2)?;
+        write!(f, "  a3:            {:#x}\n", self.a3)?;
+        write!(f, "  a4:            {:#x}\n", self.a4)?;
+        write!(f, "  a5:            {:#x}\n", self.a5)?;
+        write!(f, "  a6:            {:#x}\n", self.a6)?;
+        write!(f, "  a7:            {:#x}\n", self.a7)?;
+        write!(f, "  s2:            {:#x}\n", self.s2)?;
+        write!(f, "  s3:            {:#x}\n", self.s3)?;
+        write!(f, "  s4:            {:#x}\n", self.s4)?;
+        write!(f, "  s5:            {:#x}\n", self.s5)?;
+        write!(f, "  s6:            {:#x}\n", self.s6)?;
+        write!(f, "}}")?;
+        Ok(())
+    }
 }
 
 /// Handles interrupt, exception or system call from user space.
 #[no_mangle]
-pub fn usertrap() {
+pub unsafe fn usertrap() {
     if sstatus::read().spp() == sstatus::SPP::Supervisor {
         panic!("usertrap: not from user mode");
     }
 
-    // TODO:
-    // stvec::write(kernelvec)
+    // Send syscalls, interrupts, and exceptions to kernelvec
+    stvec::write(kernelvec as usize, stvec::TrapMode::Direct);
 
-    let tasks = TASKS.write();
-    let proc = tasks
-        .current()
-        .expect("usertrap: failed to get current process");
     {
-        let mut proc_lock = proc.write();
-
-        // Save user program counter.
-        proc_lock.trap_frame.epc = sepc::read();
-
-        unsafe { handle(scause::read(), &mut proc_lock.trap_frame) };
+        let proc_lock = current_proc().expect("usertrap: failed to get current process");
+        {
+            // Acquire the process' write lock to modify its trap frame.
+            // It is ok because we are in usertrap(), which is called once
+            // in the user space. It is not nested.
+            let mut proc = proc_lock.write();
+            // Save user program counter.
+            proc.trap_frame.epc = sepc::read();
+        }
+        handle(scause::read(), Some(proc_lock));
     }
+
+    usertrapret();
 }
 
 /// Returns to user space when `usertrap` is done.
@@ -78,75 +120,55 @@ pub fn usertrap() {
 pub unsafe fn usertrapret() {
     let satp: usize;
 
+    // We're about to switch the destination of traps from `kerneltrap()`
+    // to `usertrap()`, so turn off interrupts until we're back in
+    // user space, where `usertrap()` is correct.
+    disable_interrupt();
+
+    // Send syscalls, interrupts, and exceptions to trampoline.S
+    let entry = TRAMPOLINE + (uservec as usize - trampoline as usize);
+    stvec::write(entry, stvec::TrapMode::Direct);
+
     {
-        let tasks = TASKS.write();
+        let current_task = current_proc().expect("usertrapret: failed to get current process");
+        let mut proc = current_task.write();
 
-        // We're about to switch the destination of traps from `kerneltrap()`
-        // to `usertrap()`, so turn off interrupts until we're back in
-        // user space, where `usertrap()` is correct.
-        disable_supervisor_interrupt();
+        // Set up trapframe values that `uservec` will need when the
+        // process next re-enters the kernel.
+        let kernel_stack = proc.kernel_stack.as_ref();
+        let kernel_stack_sp = kernel_stack.as_ptr() as usize + kernel_stack.len();
+        let trap_frame = &mut proc.trap_frame;
 
-        // Send syscalls, interrupts, and exceptions to trampoline.S
-        let entry = TRAMPOLINE + (uservec as usize - trampoline as usize);
-        stvec::write(entry, stvec::TrapMode::Direct);
+        trap_frame.kernel_satp = current_page_table();
+        trap_frame.kernel_sp = kernel_stack_sp;
+        trap_frame.kernel_trap = usertrap as usize;
 
-        {
-            let current_task = match tasks.current() {
-                Ok(current_task) => current_task,
-                Err(_) => panic!("get current process failed."),
-            };
-            let proc = current_task.write();
+        trace!("usertrapret: trap_frame: {}", trap_frame);
 
-            // // Set up trapframe values that `uservec` will need when the
-            // // process next re-enters the kernel.
-            // let stack = proc.kernel_stack.as_ref();
-            // proc.trap_frame = TrapFrame {
-            //     kernel_satp: current_page_table(), // kernel page table.
-            //     kernel_sp: stack.as_ptr() as usize + stack.len(), // kernel stack
-            //     kernel_trap: usertrap as usize,
-            //     ..Default::default()
-            // };
+        // Set up the registers that trampoline.S's `sret` will use
+        // to get the usr space.
 
-            // Set up the registers that trampoline.S's `sret` will use
-            // to get the usr space.
+        // Set S Previous Privilege mode to User.
+        sstatus::set_spp(sstatus::SPP::User);
+        // Enable interrupts in user mode.
+        sstatus::set_spie();
 
-            // Set S Previous Privilege mode to User.
-            sstatus::set_spp(sstatus::SPP::User);
-            // Enable interrupts in user mode.
-            sstatus::set_spie();
+        // Set S Exception Program Counter to the saved user pc.
+        sepc::write(proc.trap_frame.epc);
 
-            // Set S Exception Program Counter to the saved user pc.
-            sepc::write(proc.trap_frame.epc);
-
-            satp = match proc.page_table.as_ref() {
-                Some(pt) => {
-                    println!("enable page table: {}", pt);
-                    pt.make_satp()
-                }
-                None => panic!("invalid process"),
-            }
-        }
+        satp = proc.page_table.as_ref().make_satp();
+        debug!("usertrapret: user_page_table satp: 0x{:x}", satp);
     }
-    println!(4);
 
     // Jump to trampoline.S, which switches to the user page table,
     // restores user registers, and switches to user mode with `sret`.
     let trampoline_userret = TRAMPOLINE + (userret as usize - trampoline as usize);
-    println!("userret: 0x{:x}", trampoline_userret as usize);
     let userret_virt: extern "C" fn(usize, usize) -> ! =
         core::mem::transmute(trampoline_userret as usize);
-    userret_virt(TRAPFRAME, satp);
+    userret_virt(TRAP_FRAME, satp);
 }
 
 #[no_mangle]
-pub fn kerneltrap() {
-    let lock = TASKS.write();
-    let proc = lock
-        .current()
-        .expect("usertrap: failed to get current process");
-    {
-        let mut proc_lock = proc.write();
-
-        unsafe { handle(scause::read(), &mut proc_lock.trap_frame) };
-    }
+pub unsafe fn kerneltrap() {
+    handle(scause::read(), current_proc());
 }

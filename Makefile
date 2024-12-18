@@ -26,10 +26,10 @@ $(KERNEL_IMG): $(TARGET_DIR)
 	@cp kernel/$(TARGET_DIR)/$(TARGET)/$(MODE)/$(KERNEL_NAME).img $(KERNEL_IMG)
 
 $(TARGET_DIR)/bin/%: $(TARGET_DIR)
-	$(MAKE) -C user install MODE=$(MODE) TARGET=$(TARGET) INSTALL_DIR=../$(TARGET_DIR)/bin
+	$(MAKE) -C user install MODE=release TARGET=$(TARGET) INSTALL_DIR=../$(TARGET_DIR)/bin
 
 $(ROOTFS): $(KERNEL_IMG) $(TARGET_DIR)/bin/%
-	$(MAKE) -C fs mkfs MODE=$(MODE) TARGET=$(TARGET) IMG=$(ROOTFS) BINS=../$(TARGET_DIR)/bin
+	$(MAKE) -C fs mkfs MODE=release TARGET=$(TARGET) IMG=$(ROOTFS) BINS=../$(TARGET_DIR)/bin
 	@cp fs/$(ROOTFS) $(TARGET_DIR)/
 
 
@@ -60,7 +60,8 @@ gdb_client:
 	$(GDB) \
 	-ex 'file $(KERNEL_ELF)' \
 	-ex 'set arch riscv:rv64' \
-	-ex 'target remote localhost:1234'
+	-ex 'target remote localhost:1234' \
+	--tui
 
 clean:
 	@for dir in $(SUBDIRS); do \

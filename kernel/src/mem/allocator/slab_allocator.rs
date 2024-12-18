@@ -10,7 +10,7 @@ use crate::{mem::PAGE_SIZE, pg_round_up};
 pub const SLAB_PAGES: usize = 2;
 
 /// The maximum order supported by the slab allocator.
-pub const MAX_SLAB_ORDER: usize = 12;
+pub const MAX_SLAB_ORDER: usize = 11;
 
 #[repr(C)]
 struct FreeBlock {
@@ -32,6 +32,8 @@ impl SlabHeader {
 
         for i in 0..total_objects {
             let obj_addr = object_start.as_ptr() as usize + i * object_size;
+            assert!(obj_addr % align_of::<FreeBlock>() == 0, "obj_addr is not properly aligned");
+
             let obj_ptr = obj_addr as *mut FreeBlock;
             (*obj_ptr).next = free_list;
             free_list = NonNull::new(obj_ptr);
@@ -91,8 +93,11 @@ impl MemCache {
             let slab_ptr = page as *mut SlabHeader;
             let object_start = pg_round_up!(page + size_of::<SlabHeader>(), self.align);
             let object_end = page + SLAB_PAGES * PAGE_SIZE;
+
+            assert!(object_start % self.align == 0, "object_start is not properly aligned");
             assert!(object_start < object_end, "object_start must less than object_end");
             trace!("object_start: 0x{:x}, object_end: 0x{:x}", object_start, object_end);
+
             unsafe {
                 (*slab_ptr).init(
                     NonNull::new_unchecked(object_start as *mut u8),
@@ -199,7 +204,6 @@ impl SlabAllocator {
                 Mutex::new(MemCache::new(512, 512)),
                 Mutex::new(MemCache::new(1024, 1024)),
                 Mutex::new(MemCache::new(2048, 2048)),
-                Mutex::new(MemCache::new(4096, 4096)),
             ],
             frame_allocator,
         }

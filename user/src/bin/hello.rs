@@ -1,12 +1,16 @@
 #![no_std]
 #![no_main]
 
-use user_lib::println;
+use syscall::exit;
+use system::println;
 
-extern crate user_lib;
+extern crate system;
 
 #[no_mangle]
-fn main() -> i32 {
-    println!("hello, world");
-    0
+fn main() {
+    for i in 0..10 {
+        println!("{}", i);
+    }
+    println!("Hello, world!");
+    exit(0);
 }

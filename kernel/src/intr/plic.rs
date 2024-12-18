@@ -1,7 +1,6 @@
 use log::{debug, info};
 
-use super::cpu_id;
-use crate::{drivers::virtio::handle_virtio_interrupt, mem::PLIC_BASE};
+use crate::{drivers::virtio::handle_virtio_interrupt, proc::cpu::cpu_id};
 
 #[repr(u32)]
 #[derive(Debug)]
@@ -16,21 +15,27 @@ impl From<u32> for IRQ {
     }
 }
 
-macro_rules! plic_irq_senable {
-    ($hart_id:expr) => {
-        *((crate::mem::PLIC_BASE + 0x2080 + ($hart_id * 0x100)) as *mut u32)
+macro_rules! plic_irq_priority {
+    ($irq:expr) => {
+        ((crate::mem::PLIC_BASE + ($irq as usize * 4)) as *mut u32)
     };
 }
 
-macro_rules! plic_irq_spriority {
+macro_rules! plic_senable {
     ($hart_id:expr) => {
-        *((crate::mem::PLIC_BASE + 0x201000 + ($hart_id * 0x2000)) as *mut u32)
+        ((crate::mem::PLIC_BASE + 0x2080 + ($hart_id * 0x100)) as *mut u32)
+    };
+}
+
+macro_rules! plic_spriority {
+    ($hart_id:expr) => {
+        ((crate::mem::PLIC_BASE + 0x201000 + ($hart_id * 0x2000)) as *mut u32)
     };
 }
 
 macro_rules! plic_sclaim {
     ($hart_id:expr) => {
-        *((crate::mem::PLIC_BASE + 0x201004 + ($hart_id * 0x2000)) as *mut u32)
+        ((crate::mem::PLIC_BASE + 0x201004 + ($hart_id * 0x2000)) as *mut u32)
     };
 }
 
@@ -41,22 +46,18 @@ pub unsafe fn plic_init() {
     debug!("init plic hart: {}", hart);
 
     // TODO: enable virtio interrupt
-    // set_irq(IRQ::VIRTIO, 1);
+    // plic_irq_priority!(IRQ::VIRTIO as u32).write_volatile(1);
 
     // enable irq for this hart in S-mode
-    plic_irq_senable!(hart) |= 1 << IRQ::VIRTIO as u32;
+    plic_senable!(hart).write_volatile(1 << IRQ::VIRTIO as u32);
 
     // set this hart's S-mode threshold to 0
-    plic_irq_spriority!(hart) = 0;
-}
-
-unsafe fn set_irq(irq: IRQ, value: u32) {
-    *((PLIC_BASE + (irq as usize * 4)) as *mut u32) = value;
+    plic_spriority!(hart).write_volatile(0);
 }
 
 pub fn handle_plic() {
     let hart_id = cpu_id();
-    let irq = unsafe { plic_sclaim!(hart_id) };
+    let irq = unsafe { plic_sclaim!(hart_id).read_volatile() };
 
     info!("Received PLIC interrupt: irq: {}, hart_id: {}", irq, hart_id);
     match IRQ::from(irq) {

@@ -16,6 +16,10 @@ impl<T> OnceCell<T> {
         }
     }
 
+    pub fn init(&self, f: impl FnOnce() -> T) -> Result<(), OnceCellAlreadySetError> {
+        return self.set(f());
+    }
+
     pub fn set(&self, value: T) -> Result<(), OnceCellAlreadySetError> {
         let mut initialized = self.initialized.lock();
 
@@ -51,6 +55,7 @@ impl<T> OnceCell<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct OnceCellAlreadySetError;
 
 unsafe impl<T> Sync for OnceCell<T> {}

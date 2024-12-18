@@ -1,8 +1,10 @@
-use core::arch::{asm, global_asm};
+use alloc::sync::Arc;
+use core::arch::global_asm;
 
-use log::info;
-use plic::{handle_plic, plic_init};
+use log::{debug, info};
+use plic::handle_plic;
 use riscv::{
+    asm::wfi,
     interrupt::{supervisor::Interrupt, Exception},
     register::{
         scause::{self, Trap},
@@ -11,11 +13,20 @@ use riscv::{
     },
     ExceptionNumber, InterruptNumber,
 };
+use spin::RwLock;
+use syscall::handle_system_call;
 
 use self::timer::{set_next_timer, tick};
-pub use self::trap::{usertrapret, TrapFrame};
+pub use self::{
+    sbi::shutdown,
+    trap::{usertrapret, TrapFrame},
+};
+use crate::proc::{yield_, Proc};
 
+pub mod guard;
 pub mod plic;
+mod sbi;
+mod syscall;
 mod timer;
 mod trap;
 
@@ -38,29 +49,30 @@ extern "C" {
 }
 
 /// Handles all traps from user or kernel process.
-pub unsafe fn handle(cause: scause::Scause, context: &mut TrapFrame) {
-    disable_supervisor_external_interrupt();
-    disable_supervisor_interrupt();
-
+pub unsafe fn handle(cause: scause::Scause, proc: Option<Arc<RwLock<Proc>>>) {
     let stval = stval::read();
-    match cause.cause() {
-        Trap::Exception(exception) => match Exception::from_number(exception) {
-            Err(err) => panic!("{}", err),
-            Ok(Exception::LoadPageFault) | Ok(Exception::StorePageFault) => {
-                panic!("pagefault: bad addr = {:#x}, instruction = {:#x}", stval, context.epc,);
-            }
-            Ok(e) => unimplemented!("{:?}", e),
-        },
-        Trap::Interrupt(intr) => match Interrupt::from_number(intr) {
-            Err(err) => panic!("{}", err),
-            Ok(Interrupt::SupervisorTimer) => tick(),
-            Ok(Interrupt::SupervisorExternal) => handle_plic(),
-            Ok(e) => unimplemented!("{:?}", e),
-        },
+    debug!("intr: handling interrupt...");
+    {
+        match cause.cause() {
+            Trap::Exception(exception) => match Exception::from_number(exception) {
+                Err(err) => panic!("{}", err),
+                Ok(Exception::LoadPageFault) | Ok(Exception::StorePageFault) => {
+                    panic!("pagefault: bad addr = {:#x}", stval,);
+                }
+                Ok(Exception::UserEnvCall) => handle_system_call(proc.expect("no process")),
+                Ok(e) => unimplemented!("unimplemented exception {:?}", e),
+            },
+            Trap::Interrupt(intr) => match Interrupt::from_number(intr) {
+                Err(err) => panic!("{}", err),
+                Ok(Interrupt::SupervisorTimer) => {
+                    tick();
+                    yield_();
+                }
+                Ok(Interrupt::SupervisorExternal) => handle_plic(),
+                Ok(i) => unimplemented!("unimplemented interrupt {:?}", i),
+            },
+        }
     }
-
-    enable_supervisor_interrupt();
-    enable_supervisor_external_interrupt();
 }
 
 pub fn init() {
@@ -74,43 +86,35 @@ pub fn init() {
         sie::set_stimer();
 
         // enable PLIC interrupts
-        plic_init();
+        // plic_init();
 
-        enable_supervisor_interrupt();
-        enable_supervisor_external_interrupt();
+        enable_interrupt();
+        enable_external_interrupt();
     }
     set_next_timer();
 }
 
 #[inline(always)]
-pub fn cpu_id() -> usize {
-    // let id: usize;
-    // unsafe { asm!("mv {}, tp", out(reg) id) };
-    // id
-    0
-}
-
-#[inline(always)]
-pub fn set_cpu_id(id: usize) {
-    unsafe { asm!("mv tp, {}", in(reg) id) };
-}
-
-#[inline(always)]
-unsafe fn disable_supervisor_interrupt() {
+pub unsafe fn disable_interrupt() {
     sstatus::clear_sie();
 }
 
 #[inline(always)]
-unsafe fn enable_supervisor_interrupt() {
+pub unsafe fn enable_interrupt() {
     sstatus::set_sie();
 }
 
 #[inline(always)]
-unsafe fn enable_supervisor_external_interrupt() {
+unsafe fn enable_external_interrupt() {
     sie::set_sext();
 }
 
 #[inline(always)]
-unsafe fn disable_supervisor_external_interrupt() {
+unsafe fn disable_external_interrupt() {
     sie::clear_sext();
+}
+
+#[inline(always)]
+pub fn wait_for_interrupt() {
+    wfi();
 }

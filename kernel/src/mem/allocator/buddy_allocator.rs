@@ -1,6 +1,6 @@
 use core::ptr::NonNull;
 
-use log::{debug, error, info, trace};
+use log::{error, info, trace};
 
 use super::FrameAllocator;
 use crate::{

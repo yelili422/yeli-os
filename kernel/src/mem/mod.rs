@@ -1,11 +1,13 @@
-use allocator::{init_allocator, FromRawPage};
+use address::VirtualAddress;
+use allocator::init_allocator;
 use log::info;
+use page::kvm_make;
 
 use self::{
-    address::{as_mut, Address, VirtualAddress, MAX_VA},
-    page::{enable_paging, PTEFlags, PageSize, PageTable, Size4KiB},
+    address::{Address, MAX_VA},
+    page::{enable_paging, PageSize, PageTable, Size4KiB},
 };
-use crate::{intr::trampoline, lp2addr, proc::TaskId};
+use crate::lp2addr;
 
 pub mod address;
 pub mod allocator;
@@ -21,12 +23,6 @@ pub const KERNEL_BASE: Address = 0x8020_0000;
 /// The end address of physical memory.
 pub const MEM_END: Address = 0x8000_0000 + 1024 * 1024 * 128;
 
-/// The address of trampoline.
-pub const TRAMPOLINE: Address = MAX_VA - PAGE_SIZE;
-
-/// The address of trap frame.
-pub const TRAPFRAME: Address = TRAMPOLINE - PAGE_SIZE;
-
 /// MMIO base address.
 pub const VIRTIO_MMIO_BASE: Address = 0x1000_1000;
 
@@ -36,17 +32,32 @@ pub const VIRTIO_MMIO_LEN: usize = 0x1000;
 /// riscv default PLIC(Platform-Level Interrupt Controller) base address.
 pub const PLIC_BASE: usize = 0x0C00_0000;
 
-/// The kernel stack address of this process.
-pub const fn kernel_stack(pid: TaskId) -> VirtualAddress {
-    TRAMPOLINE - (pid as usize + 1) * 2 * PAGE_SIZE
-}
+/// UART0 base address.
+pub const UART0: usize = 0x1000_0000;
+
+/// The address of trampoline.
+pub const TRAMPOLINE: VirtualAddress = MAX_VA - PAGE_SIZE;
+
+/// The address of trap frame.
+pub const TRAP_FRAME: VirtualAddress = TRAMPOLINE - PAGE_SIZE;
+
+/// User stack length
+pub const USER_STACK_SIZE: usize = PAGE_SIZE * 4;
+
+/// The address of user stack.
+pub const USER_STACK: VirtualAddress = TRAP_FRAME - USER_STACK_SIZE - 1;
+
+/// Kernel stack length
+pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64; // FIXME: it's toooo big
 
 /// Converts a linker identifier to address.
 #[macro_export]
-#[allow(unused_unsafe)]
 macro_rules! lp2addr {
     ($link_point:ident) => {
-        unsafe { &($link_point) as *const _ as usize }
+        #[allow(unused_unsafe)]
+        unsafe {
+            &($link_point) as *const _ as usize
+        }
     };
 }
 
@@ -58,60 +69,13 @@ extern "C" {
     static etext: u8;
 }
 
-/// Make a direct map page table for the kernel.
-unsafe fn kvm_make() -> &'static mut PageTable {
-    info!("page_table: initializing kernel page table...");
-
-    let pt = unsafe {
-        let page = PageTable::new_zeroed();
-        info!("page_table: init page table at 0x{:x}", page);
-        as_mut::<PageTable>(page)
-    };
-
-    // map kernel text executable and read-only.
-    info!("page_table: mapping kernel text section...");
-    pt.map(
-        KERNEL_BASE,
-        KERNEL_BASE,
-        lp2addr!(etext) - KERNEL_BASE,
-        PTEFlags::R | PTEFlags::X,
-    );
-
-    // map kernel data and the physical RAM we'll make use of.
-    info!("page_table: mapping kernel data section...");
-    pt.map(
-        lp2addr!(etext),
-        lp2addr!(etext),
-        MEM_END - lp2addr!(etext),
-        PTEFlags::R | PTEFlags::W,
-    );
-
-    // Map the trampoline for trap entry/exit to the hightest virtual
-    // address in the kernel.
-    info!("page_table: mapping trampoline...");
-    pt.map(
-        TRAMPOLINE,
-        trampoline as usize,
-        PAGE_SIZE,
-        PTEFlags::R | PTEFlags::X | PTEFlags::G,
-    );
-
-    info!("page_table: mapping MMIO section...");
-    pt.map(VIRTIO_MMIO_BASE, VIRTIO_MMIO_BASE, VIRTIO_MMIO_LEN, PTEFlags::R | PTEFlags::W);
-
-    info!("page_table: mapping PLIC section...");
-    pt.map(PLIC_BASE, PLIC_BASE, 0x4_000_000, PTEFlags::R | PTEFlags::W | PTEFlags::G);
-
-    pt
-}
-
-pub unsafe fn init() {
+pub fn init() {
     assert_eq!(size_of::<PageTable>(), PAGE_SIZE);
 
     info!("Initializing memory...");
-    init_allocator(lp2addr!(end), MEM_END);
-
-    let kernel_pagetable = kvm_make();
-    enable_paging(kernel_pagetable);
-    info!("page_table: initialized.");
+    unsafe {
+        init_allocator(lp2addr!(end), MEM_END);
+        let kernel_pagetable = kvm_make();
+        enable_paging(kernel_pagetable);
+    }
 }

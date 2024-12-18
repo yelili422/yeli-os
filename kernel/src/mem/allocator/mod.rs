@@ -47,7 +47,7 @@ unsafe impl GlobalAlloc for GlobalAllocator {
                 .unwrap_or(null_mut())
         };
         trace!(
-            "global_alloc: layout({}, {}), result: 0x{:x}",
+            "global_alloc: alloc layout({}, {}), result: 0x{:x}",
             layout.size(),
             layout.align(),
             result as usize
@@ -68,6 +68,7 @@ unsafe impl GlobalAlloc for GlobalAllocator {
         } else {
             SLAB_ALLOCATOR.free(order, NonNull::new_unchecked(ptr));
         }
+        trace!("global_alloc: dealloc: 0x{:x}", ptr as usize);
     }
 }
 

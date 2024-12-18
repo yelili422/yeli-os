@@ -1,14 +1,15 @@
 use core::fmt::{self, Write};
 
-use syscall::sys_write;
+use syscall::{read, write};
 
-struct Stdout;
-
+const STDIN: usize = 0;
 const STDOUT: usize = 1;
+
+pub struct Stdout;
 
 impl Write for Stdout {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        sys_write(STDOUT, s.as_bytes());
+        write(STDOUT, s.as_bytes());
         Ok(())
     }
 }
@@ -28,5 +29,18 @@ macro_rules! print {
 macro_rules! println {
     ($fmt: literal $(, $($arg: tt)+)?) => {
         $crate::console::_print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?));
+    }
+}
+
+pub struct Stdin;
+
+impl Stdin {
+    pub fn read(&self, buf: &mut [u8]) -> Result<usize, ()> {
+        let res = read(STDIN, buf);
+        if res < 0 {
+            Err(())
+        } else {
+            Ok(res as usize)
+        }
     }
 }

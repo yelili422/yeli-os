@@ -11,7 +11,7 @@
 /// tracing returns, it returns not to `sched` but to `scheduler`, and
 /// its stack pointer points at the current CPU’s scheduler stack.
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Context {
     pub ra: usize,
     pub sp: usize,

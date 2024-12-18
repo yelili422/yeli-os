@@ -1,8 +1,39 @@
 [package]
-name = "user_lib"
+name = "system"
 version = "0.1.0"
 authors = ["YeLi <i@yeli.io>"]
 edition = "2021"
 
 [dependencies]
 syscall = { version = "0.1.0", path = "../syscall" }
+
+buddy_system_allocator = "0.6"
+
+[lib]
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "init"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "hello"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "shell"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "echo"
+test = false
+doctest = false
+bench = false

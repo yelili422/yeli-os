@@ -1,3 +1,5 @@
+/// the virtio spec:
+/// https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.pdf
 pub mod virtio_blk;
 
 use alloc::boxed::Box;
@@ -6,7 +8,7 @@ use core::ptr::NonNull;
 use bitflags::bitflags;
 use virtio_blk::VIRTIO_BLK_DEVICES;
 
-use super::{ReadOnly, ReadWrite, Volatile, WriteOnly};
+use crate::sync::volatile::{ReadOnly, ReadWrite, WriteOnly};
 
 /// Virtqueue size.
 const QUEUE_SIZE: usize = 16;
@@ -154,31 +156,13 @@ struct VirtQueue {
 
 impl VirtQueue {
     pub fn new() -> Self {
-        let desc = Box::new(core::array::from_fn(|_| VirtqDesc {
-            addr:  0,
-            len:   0,
-            flags: 0,
-            next:  0,
-        }));
+        let desc = Box::new(core::array::from_fn(|_| VirtqDesc::new()));
         let desc_ptr = unsafe { NonNull::new_unchecked(Box::into_raw(desc)) };
 
-        let avail = Box::new(VirtqAvail {
-            flags:      Volatile::from(0),
-            idx:        Volatile::from(0),
-            ring:       core::array::from_fn(|_| Volatile::from(0)),
-            used_event: Volatile::from(0),
-        });
+        let avail = Box::new(VirtqAvail::new());
         let avail_ptr = unsafe { NonNull::new_unchecked(Box::into_raw(avail)) };
 
-        let used = Box::new(VirtqUsed {
-            flags:       Volatile::from(0),
-            idx:         Volatile::from(0),
-            ring:        core::array::from_fn(|_| VirtqUsedElem {
-                id:  Volatile::from(0),
-                len: Volatile::from(0),
-            }),
-            avail_event: Volatile::from(0),
-        });
+        let used = Box::new(VirtqUsed::new());
         let used_ptr = unsafe { NonNull::new_unchecked(Box::into_raw(used)) };
 
         Self {
@@ -197,28 +181,62 @@ struct VirtqDesc {
     next:  u16,
 }
 
-#[repr(C, align(2))]
+impl VirtqDesc {
+    pub fn new() -> Self {
+        VirtqDesc {
+            addr:  0,
+            len:   0,
+            flags: 0,
+            next:  0,
+        }
+    }
+}
+
+#[repr(C)]
 struct VirtqAvail {
-    flags:      Volatile<u16>,
-    idx:        Volatile<u16>,
-    ring:       [Volatile<u16>; QUEUE_SIZE],
-    used_event: Volatile<u16>, /* Only if VIRTIO_F_EVENT_IDX */
+    flags:      u16,
+    idx:        u16,
+    ring:       [u16; QUEUE_SIZE],
+    used_event: u16, /* Only if VIRTIO_F_EVENT_IDX */
+}
+
+impl VirtqAvail {
+    pub fn new() -> Self {
+        VirtqAvail {
+            flags:      0,
+            idx:        0,
+            ring:       [0; QUEUE_SIZE],
+            used_event: 0,
+        }
+    }
 }
 
 #[repr(C, align(4))]
 struct VirtqUsed {
-    flags:       Volatile<u16>,
-    idx:         Volatile<u16>,
+    flags:       u16,
+    idx:         u16,
     ring:        [VirtqUsedElem; QUEUE_SIZE],
-    avail_event: Volatile<u16>, /* Only if VIRTIO_F_EVENT_IDX */
+    avail_event: u16, /* Only if VIRTIO_F_EVENT_IDX */
 }
 
-#[repr(C)]
+impl VirtqUsed {
+    pub fn new() -> Self {
+        VirtqUsed {
+            flags:       0,
+            idx:         0,
+            ring:        core::array::from_fn(|_| VirtqUsedElem { id: 0, len: 0 }),
+            avail_event: 0,
+        }
+    }
+}
+
+#[repr(C, align(4))]
 struct VirtqUsedElem {
-    id:  Volatile<u32>, // first descriptor index of chain
-    len: Volatile<u32>, // wrote bytes
+    id:  u32, // first descriptor index of chain
+    len: u32, // wrote bytes
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 pub enum VirtIOInitError {
     /// Invalid magic number 0x74726976

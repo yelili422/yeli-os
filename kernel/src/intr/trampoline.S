@@ -15,6 +15,8 @@ trampoline:
 .align 4
 .global uservec
 uservec:
+    # TODO: disable interrupt here ?
+
     # sscratch points to where the process's p->trapframe is mapped
     # into user space, at TRAPFRAME
 
@@ -87,7 +89,6 @@ userret:
 
     # Switch to the user page table.
     # sfence.vma  zero, zero
-
     csrw    satp, a1
     sfence.vma  zero, zero
 

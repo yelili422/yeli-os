@@ -1,67 +1,54 @@
+use alloc::sync::Arc;
 use core::arch::global_asm;
 
-use log::{debug, info};
-use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use cpu::CPU;
+use log::info;
+use spin::rwlock::RwLock;
 
-pub use self::{backtrace::*, context::Context, task::*, task_list::*};
-use crate::{mem::PAGE_SIZE, println};
+pub use self::{
+    context::Context,
+    proc::{Proc, ProcId, ProcState},
+    scheduler::*,
+};
 
-mod backtrace;
 mod context;
-mod task;
-mod task_list;
+pub mod cpu;
+mod proc;
+mod scheduler;
 
 global_asm!(include_str!("switch.S"));
 
-/// Maximum number of processes.
-pub const MAX_PROC: u64 = 64;
-
-/// The default kernel stack size.
-pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 2;
-
-/// The default user stack size.
-pub const USER_STACK_SIZE: usize = PAGE_SIZE * 2;
-
-pub static TASKS: RwLock<TaskList> = RwLock::new(TaskList::new());
-
-pub fn tasks() -> RwLockReadGuard<'static, TaskList> {
-    TASKS.read()
+pub fn current_proc() -> Option<Arc<RwLock<Proc>>> {
+    let cpu = CPU.current();
+    cpu.current_proc()
 }
 
-pub fn tasks_mut() -> RwLockWriteGuard<'static, TaskList> {
-    TASKS.write()
+fn set_current_proc(proc: Arc<RwLock<Proc>>) {
+    let cpu = CPU.current();
+    cpu.set_current_proc(proc);
 }
 
 extern "C" {
     /// Saves/Restores the registers from `Context` and switches
     /// process to other.
-    fn switch_to(old: *mut Context, new: *const Context);
-}
-
-pub fn schedule() -> ! {
-    let init_proc_context: *const Context;
-    {
-        let tasks = tasks();
-        let init_proc = tasks.get(&0).unwrap();
-        {
-            let init_proc_lock = init_proc.read();
-            init_proc_context = &init_proc_lock.context;
-        }
-    }
-
-    info!("switching to next process...");
-    unsafe { switch_to(&mut Context::default(), init_proc_context) }
-
-    panic!("unreachable.")
+    fn switch_to(old: *mut Context, new: *mut Context);
 }
 
 pub fn init() {
     info!("Initializing processes...");
-    {
-        let mut tasks = tasks_mut();
-        tasks.user_init();
-    }
-    // backtrace()
+    let mut procs = SCHEDULER
+        .get_or_init(|| RwLock::new(ProcManager::new()))
+        .write();
+    procs.user_init().unwrap();
+}
+
+pub trait Scheduler {
+    fn schedule(&mut self) -> Option<ProcId>;
+}
+
+#[derive(Debug)]
+pub enum ProcInitFailed {
+    NoSuchFile,
 }
 
 #[cfg(test)]

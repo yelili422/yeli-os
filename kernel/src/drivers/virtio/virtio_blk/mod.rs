@@ -11,10 +11,10 @@ use spin::Mutex;
 
 use super::{VirtIOError, VirtIOInitError, VirtIORegs, VirtQueue, VirtqDesc, VirtqDescFlags};
 use crate::{
-    drivers::{
-        virtio::{VirtIODeviceType, VirtIOFeatures, VirtIOStatus, CONFIG_SPACE_OFFSET, QUEUE_SIZE},
-        Volatile,
+    drivers::virtio::{
+        VirtIODeviceType, VirtIOFeatures, VirtIOStatus, CONFIG_SPACE_OFFSET, QUEUE_SIZE,
     },
+    sync::volatile::Volatile,
     va2pa,
 };
 
@@ -167,26 +167,25 @@ impl VirtIOBlock {
         if buf.len() != BLOCK_SIZE {
             return Err(VirtIOError::InvalidBufferSize(buf.len()));
         }
-        self.send(block_id, buf.as_ptr(), VirtIOBlockReqType::Read)
+        self.commit(block_id, buf.as_ptr(), VirtIOBlockReqType::Read)
     }
 
     pub fn write_block(&self, block_id: u64, buf: &[u8]) -> Result<(), VirtIOError> {
         if buf.len() != BLOCK_SIZE {
             return Err(VirtIOError::InvalidBufferSize(buf.len()));
         }
-        self.send(block_id, buf.as_ptr(), VirtIOBlockReqType::Write)
+        self.commit(block_id, buf.as_ptr(), VirtIOBlockReqType::Write)
     }
 
-    fn send(
+    fn commit(
         &self,
         block_id: u64,
         buf_ptr: *const u8,
         op: VirtIOBlockReqType,
     ) -> Result<(), VirtIOError> {
         assert_eq!(BLOCK_SIZE % 512, 0);
-
-        let mut inner = self.inner.lock();
         {
+            let mut inner = self.inner.lock();
             let sector = block_id * (BLOCK_SIZE as u64 / 512);
             let sector_end = sector + (BLOCK_SIZE as u64 / 512);
             if sector_end >= inner.sectors_num {
@@ -205,7 +204,7 @@ impl VirtIOBlock {
             let status: Box<u8> = Box::new(0xff); // device writes 0 on success
             let status_ptr = &*status as *const u8;
 
-            let desc = unsafe { inner.queue.desc.as_mut() };
+            let mut desc = unsafe { inner.queue.desc.read_volatile() };
             desc[0] = VirtqDesc {
                 addr:  va2pa!(&*header as *const _ as u64),
                 len:   core::mem::size_of::<VirtIOBlockReq>() as u32,
@@ -224,22 +223,24 @@ impl VirtIOBlock {
                 },
                 next:  2,
             };
-
             desc[2] = VirtqDesc {
                 addr:  va2pa!(status_ptr as u64),
                 len:   1,
                 flags: VirtqDescFlags::WRITE.bits(),
                 next:  0,
             };
+            unsafe { inner.queue.desc.write_volatile(desc) };
 
             // notify device
-            let avail = unsafe { inner.queue.avail.as_mut() };
-
-            let avail_idx = avail.idx.read_volatile();
-            avail.ring[avail_idx as usize % QUEUE_SIZE] = Volatile::from(0);
-            avail.idx.write_volatile(avail_idx + 1);
-
             unsafe {
+                let mut avail = inner.queue.avail.read_volatile();
+
+                let avail_idx = avail.idx;
+                avail.ring[avail_idx as usize % QUEUE_SIZE] = 0;
+                avail.idx = avail_idx + 1;
+
+                inner.queue.avail.write_volatile(avail);
+
                 (*inner.regs).queue_notify.write_volatile(0);
             }
 
@@ -247,40 +248,59 @@ impl VirtIOBlock {
             // wait device
             loop {
                 let used = unsafe { inner.queue.used.read_volatile() };
-                if used.idx.read_volatile() != inner.used_idx {
-                    let id = used.ring[inner.used_idx as usize % QUEUE_SIZE]
-                        .id
-                        .read_volatile();
+                if used.idx != inner.used_idx {
+                    let id = used.ring[inner.used_idx as usize % QUEUE_SIZE].id;
+
                     trace!("virtio: finished operation id: {}", id);
                     break;
                 }
             }
             inner.used_idx = inner.used_idx.wrapping_add(1);
-            assert_eq!(unsafe { status_ptr.read_volatile() }, 0);
+            unsafe {
+                if status_ptr.read_volatile() != 0 {
+                    panic!(
+                        "virtio: block operation failed: status: {}",
+                        status_ptr.read_volatile()
+                    );
+                }
+            }
 
-            // TODO: change loop to sleep
             // inner.status[0] = Volatile::from(VirtIORequestStatus::Pending);
-            // while inner.status[0].read_volatile() == VirtIORequestStatus::Pending {}
         }
+
+        // // TODO: change loop to sleep
+        // while inner.status[0].read_volatile() == VirtIORequestStatus::Pending {
+        // loop {
+        //     let status = {
+        //         let inner = self.inner.lock();
+        //         inner.status[0].read_volatile()
+        //     };
+
+        //     if status == VirtIORequestStatus::Done {
+        //         break;
+        //     } else {
+
+        //     }
+        // }
         Ok(())
     }
 
     pub fn handle_interrupt(&self) {
         debug!("virtio: handling interrupt");
-        let mut inner = self.inner.lock();
-        {
-            let used = unsafe { inner.queue.used.read_volatile() };
-            while inner.used_idx != used.idx.read_volatile() {
-                let queue_used = unsafe { inner.queue.used.read() };
-                let id = queue_used.ring[inner.used_idx as usize % QUEUE_SIZE]
-                    .id
-                    .read_volatile();
-                trace!("virtio: finished operation id: {}", id);
+        // let mut inner = self.inner.lock();
+        // {
+        //     let used = unsafe { inner.queue.used.read_volatile() };
+        //     while inner.used_idx != used.idx.read_volatile() {
+        //         let queue_used = unsafe { inner.queue.used.read() };
+        //         let id = queue_used.ring[inner.used_idx as usize % QUEUE_SIZE]
+        //             .id
+        //             .read_volatile();
+        //         trace!("virtio: finished operation id: {}", id);
 
-                inner.status[id as usize] = Volatile::from(VirtIORequestStatus::Done);
-                inner.used_idx = inner.used_idx.wrapping_add(1);
-            }
-        }
+        //         inner.status[id as usize] = Volatile::from(VirtIORequestStatus::Done);
+        //         inner.used_idx = inner.used_idx.wrapping_add(1);
+        //     }
+        // }
     }
 
     pub fn capacity(&self) -> u64 {

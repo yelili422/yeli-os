@@ -19,7 +19,7 @@ impl BlockCache {
     /// Loads a new block from disk.
     pub fn new(block_id: BlockId, block_dev: Arc<dyn BlockDevice>) -> Self {
         let mut cache = [0u8; BLOCK_SIZE];
-        block_dev.read(block_id, &mut cache);
+        block_dev.read(block_id, &mut cache).unwrap();
         Self {
             cache,
             block_id,
@@ -75,7 +75,7 @@ impl BlockCache {
         }
 
         self.modified = false;
-        self.block_dev.write(self.block_id, &self.cache);
+        self.block_dev.write(self.block_id, &self.cache).unwrap();
     }
 }
 

@@ -3,7 +3,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use log::debug;
 use riscv::register::time;
 
-use crate::syscall::set_timer;
+use super::sbi::set_timer;
 
 pub const INTERVAL: usize = 100_000;
 
